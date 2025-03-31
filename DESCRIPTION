@@ -1,0 +1,10 @@
+Package: manageNimble
+Type: Package
+Title: Manage Nimble
+Version: 0.0
+Date: 2025-31-03
+Author: Quresh S. Latif, Bryan L. Nuse
+Maintainer: Quresh Latif <quresh.latif@birdconservancy.org>
+Description: Package containing wrapper functions for Nimble to facilitate Bayesian model fitting. Features include parallel processing, automated or manual checking of convergence and sampling (i.e., Rhat, n_effective), and dumping saved posterior samples to disk to avoid overloading RAM.
+Suggests: mcmcOutput, nimble, processx, dplyr, stringr, coda
+License: None
