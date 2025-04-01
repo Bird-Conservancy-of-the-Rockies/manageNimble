@@ -37,8 +37,7 @@ runNimble <-
       "if(!dir.exists(paste0(dump.path, '/tmp'))) dir.create(paste0(dump.path, '/tmp'))",
 
       "chn <- commandArgs(trailingOnly = TRUE)[[1]]",
-      "dump.path <- commandArgs(trailingOnly = TRUE)[[2]]",
-      "path.NimbleWorkspace <- commandArgs(trailingOnly = TRUE)[[3]]",
+      "path.NimbleWorkspace <- commandArgs(trailingOnly = TRUE)[[2]]",
       
       "load(path.NimbleWorkspace)",
       "source(model.path)",
@@ -58,7 +57,6 @@ runNimble <-
     proc <<- process$new(command = "parallel",
                         args = c("Rscript", eval(paste0(dump.path, "/ModRunScript.R")),
                                  "{}",
-                                 eval(dump.path),
                                  eval(paste0(dump.path, "/NimbleObjects.RData")),
                                  ":::",
                                  1:nc))
