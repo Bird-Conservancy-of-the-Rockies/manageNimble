@@ -34,12 +34,10 @@ runNimble <-
     writeLines(text = c(
       "require(nimble)",
       "require(manageNimble)",
-      "if(!dir.exists(paste0(dump.path, '/tmp'))) dir.create(paste0(dump.path, '/tmp'))",
-
       "chn <- commandArgs(trailingOnly = TRUE)[[1]]",
       "path.NimbleWorkspace <- commandArgs(trailingOnly = TRUE)[[2]]",
-      
       "load(path.NimbleWorkspace)",
+      "if(!dir.exists(paste0(dump.path, '/tmp'))) dir.create(paste0(dump.path, '/tmp'))",
       "source(model.path)",
       "i <- 1",
       "dump.file.path <- paste0(dump.path, '/mod_chn', chn, '_', i, '.RData')",
