@@ -81,7 +81,7 @@ runNimble <-
         !run.complete
       }) {
       if(automate.convergence.checks) {
-        Sys.sleep(check.freq)
+        # Sys.sleep(check.freq) # Seems unnecessary now.
         status <- "No new convergence information."
       }
       check.blocks <- countNimbleBlocks(read.path = dump.path, burnin = nb, ni.block = ni)
@@ -102,7 +102,6 @@ runNimble <-
       if(check.blocks$nblks > nblks.previous) {
         nblks.previous <- nblks <- check.blocks$nblks
         nb.now <- ifelse(nb<1, nb*ni*nblks, nb)
-        nt.now <- ifelse(automate.convergence.checks, nt*thin.additional, nt)
         ni.now <- ni*nblks
         
         do.gather.check <- automate.convergence.checks | (!automate.convergence.checks &
@@ -119,6 +118,7 @@ runNimble <-
                                    spit.summary = TRUE, mod.nam = mod.nam)
           mod.check.result <- mod.check$result
           thin.additional <- mod.out$additional.thin.rate
+          nt.now <- ifelse(automate.convergence.checks, nt*thin.additional, nt)
           mcmc.info <- c(nchains = nc, niterations = ni.now,
                          burnin = nb.now, nthin = nt.now)
           sumTab <- sumTab.focal <- mod.check$s
