@@ -33,7 +33,7 @@ runNimble <-
     #___________________________________________________________________________#
     writeLines(text = c(
       "require(nimble)",
-      "require(FunctionsBCR)",
+      "require(manageNimble)",
       "if(!dir.exists(paste0(dump.path, '/tmp'))) dir.create(paste0(dump.path, '/tmp'))",
 
       "chn <- commandArgs(trailingOnly = TRUE)[[1]]",
