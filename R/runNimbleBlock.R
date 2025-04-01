@@ -1,5 +1,5 @@
 runNimbleBlock <- function (mod.lst = NULL, comp.mcmc = NULL, n.iter = 1000,
-                       n.thin = 1, dump.path, dump.file.path,
+                       n.thin = 1, tmp.path, tmp.path, dump.file.path,
                        SamplerSourcePath = NA) {
   require(nimble)
   if(!is.na(SamplerSourcePath)) require(nimbleHMC)
@@ -12,8 +12,8 @@ runNimbleBlock <- function (mod.lst = NULL, comp.mcmc = NULL, n.iter = 1000,
     nm.conf <- configureMCMC(nm, monitors = mod.lst[[5]], thin = n.thin)
     if(!is.na(SamplerSourcePath)) source(SamplerSourcePath)
     nm.mcmc <- buildMCMC(nm.conf)
-    nm.C <- compileNimble(nm, dirName = paste0(dump.path, "/tmp"))
-    comp.mcmc <- compileNimble(nm.mcmc, project = nm.C, dirName = paste0(dump.path, "/tmp"))
+    nm.C <- compileNimble(nm, dirName = tmp.path)
+    comp.mcmc <- compileNimble(nm.mcmc, project = nm.C, dirName = tmp.path)
     comp.mcmc$run(niter = n.iter)
   } else {
     comp.mcmc$run(niter = n.iter, reset = FALSE, resetMV = TRUE)

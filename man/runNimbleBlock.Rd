@@ -8,14 +8,15 @@
 }
 \usage{
   runNimbleBlock(mod.lst = NULL, comp.mcmc = NULL, n.iter = 1000, n.thin = 1,
-            dump.file.path = NULL, SamplerSourcePath = NA)
+            tmp.path, dump.file.path, SamplerSourcePath = NA)
 }
 \arguments{
   \item{mod.lst}{A list containing: 1) code, output of nimbleCode(), 2) list of constants, 3) data list, 4) initial values list, 5) variables to monitor. If this is NULL, 'comp.mcmc' argument must be provided.}
   \item{comp.mcmc}{Compiled Nimble MCMC object, perhaps already been used. If this is NULL, 'mod.lst' argument must be provided.}
   \item{n.iter}{Length of MCMC chain to run.}
   \item{n.thin}{MCMC thinning rate.}
-  \item{dump.file.path}{If NULL, and comp.mcmc is not NULL, continue adding samples to comp.mcmc$mvSamples; if a file path, save samples to that file.}
+  \item{tmp.path}{Temporary directory in which to save NIMBLE temporary files to facilitate cleanup.}
+  \item{dump.file.path}{Save samples to this file.}
   \item{SamplerSourcePath}{Path to script file containing necessary lines to insert custom MCMC samplers. Must include necessary lines to remove default samplers and add desired samplers for target parameters. Default is to not provide a script file and thus use default samplers for all parameters.}
 }
 \value{List with two elements:
