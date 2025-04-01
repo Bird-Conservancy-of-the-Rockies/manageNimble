@@ -18,7 +18,7 @@ runNimble <-
     require(coda)
     require(mcmcOutput)
     if(!dir.exists(dump.path)) dir.create(dump.path)
-    directive.file <- paste0(dump.path, "runNimbleDirective.txt")
+    directive.file <- paste0(dump.path, "/runNimbleDirective.txt")
     writeLines("GO", directive.file)
     if(automate.convergence.checks) {
       check.log.file <- paste0(dump.path, "/Check_log.csv")
@@ -46,7 +46,7 @@ runNimble <-
       "dump.file.path <- paste0(dump.path, '/mod_chn', chn, '_', i, '.RData')",
       "mod.comp <- runNimbleBlock(mod.lst = list(model, constants, data, inits, parameters, SamplerSourcePath = SamplerSourcePath),",
       "n.iter = ni, n.thin = nt, dump.path = dump.path, dump.file.path = dump.file.path)",
-      "GO <- readLines(paste0(dump.path, 'runNimbleDirective.txt')) == 'GO'",
+      "GO <- readLines(paste0(dump.path, '/runNimbleDirective.txt')) == 'GO'",
       "while(GO) {",
       "i <- i + 1",
       "dump.file.path <- paste0(dump.path, '/mod_chn', chn, '_', i, '.RData')",
