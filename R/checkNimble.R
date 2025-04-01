@@ -1,7 +1,7 @@
 checkNimble <- function(mcmcOutput, Rht.required = 1.1, neff.required = 100,
                         par.ignore = c(), par.dontign = c(),
                         par.fuzzy.track = c(), fuzzy.threshold = 0.05,
-                        spit.summary = FALSE, mod.nam = "mod") {
+                        spit.summary = FALSE, mod.nam = "mod", directive.file = "") {
   require(mcmcOutput)
   
   if(!is.null(par.ignore) & is.null(par.fuzzy.track)) mcmcOutput <- mcmcOutputSubset(mcmcOutput,
@@ -13,7 +13,8 @@ checkNimble <- function(mcmcOutput, Rht.required = 1.1, neff.required = 100,
   
   s <- summary(mcmcOutput, MCEpc = F, Rhat = T, n.eff = T, f = T, overlap0 = T, verbose = FALSE)
   if(!any(names(s) == "Rhat")) {
-    proc$kill_tree()
+    # proc$kill_tree()
+    if(directive.file != "") writeLines("STOP", directive.file)
     stop("Rhat not calculated. Troubleshoot mcmcOuput.")
   }
   s <- s %>%
@@ -47,7 +48,8 @@ checkNimble <- function(mcmcOutput, Rht.required = 1.1, neff.required = 100,
   if(length(par.fuzzy.track) > 0) {
     Rht.fuzzy <- 1 # Putting in at least one value to avoid error later....
     if(!any(names(s) == "Rhat")) {
-      proc$kill_tree()
+      # proc$kill_tree()
+      if(directive.file != "") writeLines("STOP", directive.file)
       write.csv(s, str_c(species, "_sum_at_fail.csv"), row.names = FALSE)
       stop("Stopped model run because Rhat not calculated.")
     }

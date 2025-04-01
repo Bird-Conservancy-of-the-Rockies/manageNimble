@@ -18,6 +18,8 @@ runNimble <-
     require(coda)
     require(mcmcOutput)
     if(!dir.exists(dump.path)) dir.create(dump.path)
+    directive.file <- paste0(dump.path, "runNimbleDirective.txt")
+    writeLines("GO", directive.file)
     if(automate.convergence.checks) {
       check.log.file <- paste0(dump.path, "/Check_log.csv")
       write.csv(data.frame(Model = character(), Check = numeric(), Time = character(),
@@ -44,7 +46,8 @@ runNimble <-
       "dump.file.path <- paste0(dump.path, '/mod_chn', chn, '_', i, '.RData')",
       "mod.comp <- runNimbleBlock(mod.lst = list(model, constants, data, inits, parameters, SamplerSourcePath = SamplerSourcePath),",
       "n.iter = ni, n.thin = nt, dump.path = dump.path, dump.file.path = dump.file.path)",
-      "repeat{",
+      "GO <- readLines(paste0(dump.path, 'runNimbleDirective.txt')) == 'GO'"
+      "while(GO) {",
       "i <- i + 1",
       "dump.file.path <- paste0(dump.path, '/mod_chn', chn, '_', i, '.RData')",
       "mod.comp <- runNimbleBlock(comp.mcmc = mod.comp, n.iter = ni, dump.path = dump.path, dump.file.path = dump.file.path)",
@@ -109,11 +112,12 @@ runNimble <-
              ni.now >= max.samples.saved * nt)
         if(do.gather.check) {
           mod.out <- suppressWarnings(
-            gatherNimble(read.path = dump.path, burnin = nb, ni.block = ni,
-                         base.thin = nt, max.samples.saved = max.samples.saved)
+            gatherNimble(read.path = dump.path, directive.file = directive.file,
+                         burnin = nb, ni.block = ni, base.thin = nt,
+                         max.samples.saved = max.samples.saved)
           )
-          mod.check <- checkNimble(mod.out$out, Rht.required = Rht.required, neff.required = neff.required,
-                                   par.ignore = par.ignore, par.dontign = par.dontign,
+          mod.check <- checkNimble(mod.out$out, directive.file = directive.file, Rht.required = Rht.required,
+                                   neff.required = neff.required, par.ignore = par.ignore, par.dontign = par.dontign,
                                    par.fuzzy.track = par.fuzzy.track, fuzzy.threshold = fuzzy.threshold,
                                    spit.summary = TRUE, mod.nam = mod.nam)
           mod.check.result <- mod.check$result
@@ -131,7 +135,8 @@ runNimble <-
             }
           }
           if(any(is.na(sumTab.focal$Rhat)) | any(is.na(sumTab.focal$n.eff))) {
-            proc$kill_tree()
+            # proc$kill_tree()
+            writeLines("STOP", paste0(dump.path, "runNimbleDirective.txt"))
             write.csv(sumTab.focal, paste0("Model_summary_PID",proc$get_pid(),".csv"))
             stop(paste0("Error: One or more parameters is not being sampled.",
                         " Check data, initial values, etc., and try again.",
@@ -141,7 +146,8 @@ runNimble <-
           if(automate.convergence.checks & length(par.fuzzy.track) > 0) {
             Rht.fuzzy <- 1 # Putting in at least one value to avoid error later....
             if(!any(names(sumTab) == "Rhat")) {
-              proc$kill_tree()
+              # proc$kill_tree()
+              writeLines("STOP", paste0(dump.path, "runNimbleDirective.txt"))
               stop("Stopped model run because Rhat not calculated.")
             }
             for(p in 1:length(par.fuzzy.track)) {
@@ -192,7 +198,8 @@ runNimble <-
       }
       nchecks <- nchecks + 1
     }
-    proc$kill_tree()
+    # proc$kill_tree()
+    writeLines("STOP", directive.file)
     if(automate.convergence.checks & !mod.check.result) {
       warn.message <- paste0("Rhat did not decrease after ", nchecks,
                             " checks. Model abandoned before reaching convergence targets.")

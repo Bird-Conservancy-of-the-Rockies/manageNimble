@@ -15,6 +15,7 @@
   \item{ni.block}{Number of samples in each sampling block.}
   \item{base.thin}{Base thinning rate implemented for model run (i.e., n.thin for initial call to `runNimble`). Needed to correctly track burnin.}
   \item{max.samples.saved}{Integer that sets max samples to save across chains in final model object. Additional thinning of posterior samples (i.e., after samples are recovered from processing clusters) is implemented as necessary to limit the size of the model object to this level.}
+  \item{directive.file}{If provided (directive.file != ""), 'STOP' order is written to specified file path if negative burnin encountered to (safely) end MCMC sampling.}
 }
 \value{
   \item{out}{MCMC samples organized as an 'mcmcOutput' object.}
