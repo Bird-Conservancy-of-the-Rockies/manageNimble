@@ -1,5 +1,5 @@
 runNimbleBlock <- function (mod.lst = NULL, comp.mcmc = NULL, n.iter = 1000,
-                       n.thin = 1, tmp.path, tmp.path, dump.file.path,
+                       n.thin = 1, tmp.path, dump.file.path,
                        SamplerSourcePath = NA) {
   require(nimble)
   if(!is.na(SamplerSourcePath)) require(nimbleHMC)
