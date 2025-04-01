@@ -4,7 +4,7 @@
   Count NIMBLE sampling blocks in dump folder
 }
 \description{
-  Base function used by `RunNimbleParallel` to count number of NIMBLE sampling blocks to inform when to gather samples and check convergence.
+  Base function used by `runNimble` to count number of NIMBLE sampling blocks to inform when to gather samples and check convergence.
 }
 \usage{
   countNimbleBlocks(read.path, burnin, ni.block)
