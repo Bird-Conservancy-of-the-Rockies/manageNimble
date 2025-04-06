@@ -194,7 +194,9 @@ runNimble <-
         write.csv(check.log, check.log.file, row.names = FALSE)
       }
       nchecks <- nchecks + 1
-    }
+      if(automate.convergence.checks) Sys.sleep(check.freq)
+      if(!automate.convergence.checks) Sys.sleep(60)
+    } # Close primary while loop, i.e., while(if(automate.convergence.checks) {...} else {...})
     # proc$kill_tree()
     writeLines("STOP", directive.file)
     if(automate.convergence.checks & !mod.check.result) {
@@ -204,7 +206,7 @@ runNimble <-
                   warning = warn.message)
       if(sav.model) R.utils::saveObject(mod, mod.nam)
       if(rtrn.model) assign("mod", mod.nam, envir = .GlobalEnv)
-    } # Close primary while loop, i.e., while(if(automate.convergence.checks) {...} else {...})
+    }
     if(delete.blocks) unlink(dump.path, recursive = TRUE)
     gc(verbose = FALSE)
   }
