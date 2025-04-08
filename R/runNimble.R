@@ -194,8 +194,7 @@ runNimble <-
         write.csv(check.log, check.log.file, row.names = FALSE)
       }
       nchecks <- nchecks + 1
-      if(automate.convergence.checks) Sys.sleep(check.freq)
-      if(!automate.convergence.checks) Sys.sleep(60)
+      if(automate.convergence.checks & !mod.check.result) Sys.sleep(check.freq)
     } # Close primary while loop, i.e., while(if(automate.convergence.checks) {...} else {...})
     # proc$kill_tree()
     writeLines("STOP", directive.file)
