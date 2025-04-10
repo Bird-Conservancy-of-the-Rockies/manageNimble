@@ -43,12 +43,17 @@ runNimble <-
       "dump.file.path <- paste0(dump.path, '/mod_chn', chn, '_', i, '.RData')",
       "mod.comp <- runNimbleBlock(mod.lst = list(model, constants, data, inits, parameters, SamplerSourcePath = SamplerSourcePath),",
       "n.iter = ni, n.thin = nt, tmp.path = paste0(dump.path, '/tmp', chn), dump.file.path = dump.file.path)",
-      "GO <- readLines(paste0(dump.path, '/runNimbleDirective.txt')) == 'GO'",
-      "while(GO) {",
-      "i <- i + 1",
-      "dump.file.path <- paste0(dump.path, '/mod_chn', chn, '_', i, '.RData')",
-      "mod.comp <- runNimbleBlock(comp.mcmc = mod.comp, n.iter = ni, tmp.path = paste0(dump.path, '/tmp', chn), dump.file.path = dump.file.path)",
-      "GO <- readLines(paste0(dump.path, '/runNimbleDirective.txt')) == 'GO'",
+      "directive <- readLines(paste0(dump.path, '/runNimbleDirective.txt'))",
+      "while(directive != 'STOP') {",
+      "if(directive == 'GO') {",
+        "i <- i + 1",
+        "dump.file.path <- paste0(dump.path, '/mod_chn', chn, '_', i, '.RData')",
+        "mod.comp <- runNimbleBlock(comp.mcmc = mod.comp, n.iter = ni, tmp.path = paste0(dump.path, '/tmp', chn), dump.file.path = dump.file.path)",
+        "directive <- readLines(paste0(dump.path, '/runNimbleDirective.txt'))",
+      "} else if(directive == 'PAUSE') {",
+        "Sys.sleep(10)",
+        "directive <- readLines(paste0(dump.path, '/runNimbleDirective.txt'))",
+      "}",
       "}"
     ),
     con = paste0(dump.path, "/ModRunScript.R"))
@@ -107,6 +112,7 @@ runNimble <-
         do.gather.check <- automate.convergence.checks | (!automate.convergence.checks &
              ni.now >= max.samples.saved * nt)
         if(do.gather.check) {
+          if(automate.convergence.checks) writeLines("PAUSE", paste0(dump.path, "runNimbleDirective.txt"))
           mod.out <- suppressWarnings(
             gatherNimble(read.path = dump.path, directive.file = directive.file,
                          burnin = nb, ni.block = ni, base.thin = nt,
@@ -194,7 +200,10 @@ runNimble <-
         write.csv(check.log, check.log.file, row.names = FALSE)
       }
       nchecks <- nchecks + 1
-      if(automate.convergence.checks & !mod.check.result) Sys.sleep(check.freq)
+      if(automate.convergence.checks & !mod.check.result) {
+        writeLines("GO", paste0(dump.path, "runNimbleDirective.txt"))
+        Sys.sleep(check.freq)
+      }
     } # Close primary while loop, i.e., while(if(automate.convergence.checks) {...} else {...})
     # proc$kill_tree()
     writeLines("STOP", directive.file)
