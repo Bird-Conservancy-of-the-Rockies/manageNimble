@@ -44,7 +44,7 @@ runNimble <-
       "load(path.NimbleWorkspace)",
       "if(!dir.exists(paste0(dump.path, '/tmp', chn))) dir.create(paste0(dump.path, '/tmp', chn))",
       "source(model.path)",
-      "i <- 0",
+      "i <- 1",
       "dump.file.path <- paste0(dump.path, '/mod_chn', chn, '_', i, '.RData')",
       "mod.comp <- runNimbleBlock(mod.lst = list(model, constants, data, inits, parameters, SamplerSourcePath = SamplerSourcePath),",
       "n.iter = ni, n.thin = nt, tmp.path = paste0(dump.path, '/tmp', chn), dump.file.path = dump.file.path)",
@@ -116,6 +116,14 @@ runNimble <-
         } else {
 
           check.blocks <- countNimbleBlocks(read.path = dump.path, burnin = nb, ni.block = ni)
+          if(nb > 1) {  # Need to keep sampling until we've passed burnin if burnin is absolute.
+            while(!nrow(check.blocks$m) > 0) {
+              for(cn in 1:nc) writeLines("RESUME", paste0(dump.path, '/block',cn,'Status.txt'))
+              writeLines("GO", directive.file)
+              Sys.sleep(60)
+              check.blocks <- countNimbleBlocks(read.path = dump.path, burnin = nb, ni.block = ni)
+            }
+          }
           if(length(unique(check.blocks$m[,1])) > nc) stop("Error: Too many sampling blocks created. Code debug needed somewhere.")
           write.csv(check.blocks$m, paste0(dump.path, "/m.csv"))
           
