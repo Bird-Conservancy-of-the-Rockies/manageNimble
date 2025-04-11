@@ -25,6 +25,7 @@ runNimble <-
         status.file <- paste0(dump.path, "/block",cn,"Status.txt")
         writeLines("GO", status.file)
       }
+      rm(cn, status.file)
       check.log.file <- paste0(dump.path, "/Check_log.csv")
       write.csv(data.frame(Model = character(), Check = numeric(),
                            Time = character(), Status = character()),
@@ -49,7 +50,7 @@ runNimble <-
       "mod.comp <- runNimbleBlock(mod.lst = list(model, constants, data, inits, parameters, SamplerSourcePath = SamplerSourcePath),",
       "n.iter = ni, n.thin = nt, tmp.path = paste0(dump.path, '/tmp', chn), dump.file.path = dump.file.path)",
       "if(automate.convergence.checks) {",
-        "status.file <- paste0(dump.path, '/block',cn,'Status.txt')",
+        "status.file <- paste0(dump.path, '/block',chn,'Status.txt')",
         "status.chain <- readLines(status.file)",
         "i.stop <- check.freq",
       "}",
