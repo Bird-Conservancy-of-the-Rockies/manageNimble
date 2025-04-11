@@ -44,7 +44,7 @@ runNimble <-
       "load(path.NimbleWorkspace)",
       "if(!dir.exists(paste0(dump.path, '/tmp', chn))) dir.create(paste0(dump.path, '/tmp', chn))",
       "source(model.path)",
-      "i <- 1",
+      "i <- 0",
       "dump.file.path <- paste0(dump.path, '/mod_chn', chn, '_', i, '.RData')",
       "mod.comp <- runNimbleBlock(mod.lst = list(model, constants, data, inits, parameters, SamplerSourcePath = SamplerSourcePath),",
       "n.iter = ni, n.thin = nt, tmp.path = paste0(dump.path, '/tmp', chn), dump.file.path = dump.file.path)",
@@ -207,7 +207,7 @@ runNimble <-
           
           if(ifelse(is.null(max.tries), !mod.check.result,
                     !mod.check.result & nchecks < max.tries)) {
-            for(cn in 1:nc) writeLines("GO", paste0(dump.path, '/block',cn,'Status.txt'))
+            for(cn in 1:nc) writeLines("RESUME", paste0(dump.path, '/block',cn,'Status.txt'))
             writeLines("GO", directive.file)
             suppressWarnings(rm(mod, mod.out, mod.check, sumTab, sumTab.focal))
             gc()
