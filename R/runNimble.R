@@ -32,7 +32,7 @@ runNimble <-
     }
     save(list = c("model.path", "constants", "data", "inits", "parameters", "ni",
                   "nt", "dump.path", "SamplerSourcePath", "check.freq",
-                  "automate.convergence.checks"),
+                  "automate.convergence.checks", "directive.file"),
          file = paste0(dump.path, "/NimbleObjects.RData"))
     #[Create R script for kicking off nimble run here]. Call it "ModRunScript.R"
     #___________________________________________________________________________#
@@ -53,26 +53,26 @@ runNimble <-
         "status.chain <- readLines(status.file)",
         "i.stop <- check.freq",
       "}",
-      "directive <- readLines(paste0(dump.path, '/runNimbleDirective.txt'))",
+      "directive <- readLines(directive.file)",
       "while(directive != 'STOP') {",
       "if(automate.convergence.checks) {",
         "if(directive == 'GO' & status.chain == 'GO' & i < i.stop) {",
           "i <- i + 1",
           "dump.file.path <- paste0(dump.path, '/mod_chn', chn, '_', i, '.RData')",
           "mod.comp <- runNimbleBlock(comp.mcmc = mod.comp, n.iter = ni, tmp.path = paste0(dump.path, '/tmp', chn), dump.file.path = dump.file.path)",
-          "directive <- readLines(paste0(dump.path, '/runNimbleDirective.txt'))",
+          "directive <- readLines(directive.file)",
         "} else if(directive == 'GO' & status.chain == 'GO' & i == i.stop) {",
           "writeLines('STOP', status.file)",
           "status.chain <- readLines(status.file)",
         "} else if(directive == 'PAUSE' | directive == 'GO' & status.chain == 'STOP') {",
           "Sys.sleep(10)",
-          "directive <- readLines(paste0(dump.path, '/runNimbleDirective.txt'))",
+          "directive <- readLines(directive.file)",
           "status.chain <- readLines(status.file)",
         "} else if(status.chain == 'RESUME') {",
           "i.stop <- i + check.freq",
           "writeLines('GO', status.file)",
           "status.chain <- readLines(status.file)",
-          "directive <- readLines(paste0(dump.path, '/runNimbleDirective.txt'))",
+          "directive <- readLines(directive.file)",
         "} else {",
           "error.message <- paste0('Undefined condition reached during automated convergence process on chain ', chn, '.')",
           "writeLines(error.message, paste0(dump.path, '/block',cn,'Error.txt'))",
@@ -82,10 +82,10 @@ runNimble <-
           "i <- i + 1",
           "dump.file.path <- paste0(dump.path, '/mod_chn', chn, '_', i, '.RData')",
           "mod.comp <- runNimbleBlock(comp.mcmc = mod.comp, n.iter = ni, tmp.path = paste0(dump.path, '/tmp', chn), dump.file.path = dump.file.path)",
-          "directive <- readLines(paste0(dump.path, '/runNimbleDirective.txt'))",
+          "directive <- readLines(directive.file)",
         "} else if(directive == 'PAUSE') {",
           "Sys.sleep(10)",
-          "directive <- readLines(paste0(dump.path, '/runNimbleDirective.txt'))",
+          "directive <- readLines(directive.file)",
         "}",
       "}",
       "}"
@@ -123,7 +123,7 @@ runNimble <-
           nb.now <- ifelse(nb<1, nb*ni*nblks, nb)
           ni.now <- ni*nblks
           
-          writeLines("PAUSE", paste0(dump.path, "runNimbleDirective.txt"))
+          writeLines("PAUSE", paste0(dump.path, "/runNimbleDirective.txt"))
           mod.out <- suppressWarnings(
             gatherNimble(read.path = dump.path, directive.file = directive.file,
                          burnin = nb, ni.block = ni, base.thin = nt,
@@ -150,7 +150,7 @@ runNimble <-
           }
           if(any(is.na(sumTab.focal$Rhat)) | any(is.na(sumTab.focal$n.eff))) {
             # proc$kill_tree()
-            writeLines("STOP", paste0(dump.path, "runNimbleDirective.txt"))
+            writeLines("STOP", directive.file)
             write.csv(sumTab.focal, paste0("Model_summary_PID",proc$get_pid(),".csv"))
             stop(paste0("Error: One or more parameters is not being sampled.",
                         " Check data, initial values, etc., and try again.",
@@ -161,7 +161,7 @@ runNimble <-
             Rht.fuzzy <- 1 # Putting in at least one value to avoid error later....
             if(!any(names(sumTab) == "Rhat")) {
               # proc$kill_tree()
-              writeLines("STOP", paste0(dump.path, "runNimbleDirective.txt"))
+              writeLines("STOP", directive.file)
               stop("Stopped model run because Rhat not calculated.")
             }
             for(p in 1:length(par.fuzzy.track)) {
@@ -208,7 +208,7 @@ runNimble <-
           if(ifelse(is.null(max.tries), !mod.check.result,
                     !mod.check.result & nchecks < max.tries)) {
             for(cn in 1:nc) writeLines("GO", paste0(dump.path, '/block',cn,'Status.txt'))
-            writeLines("GO", paste0(dump.path, "runNimbleDirective.txt"))
+            writeLines("GO", directive.file)
             suppressWarnings(rm(mod, mod.out, mod.check, sumTab, sumTab.focal))
             gc()
           }
