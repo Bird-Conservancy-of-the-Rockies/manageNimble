@@ -77,7 +77,7 @@ runNimble <-
           "error.message <- paste0('Undefined condition reached during automated convergence process on chain ', chn, '.')",
           "writeLines(error.message, paste0(dump.path, '/block',cn,'Error.txt'))",
         "}",
-      "} else {"
+      "} else {",
         "if(directive == 'GO') {",
           "i <- i + 1",
           "dump.file.path <- paste0(dump.path, '/mod_chn', chn, '_', i, '.RData')",
@@ -87,7 +87,7 @@ runNimble <-
           "Sys.sleep(10)",
           "directive <- readLines(paste0(dump.path, '/runNimbleDirective.txt'))",
         "}",
-      "}"
+      "}",
       "}"
     ),
     con = paste0(dump.path, "/ModRunScript.R"))
