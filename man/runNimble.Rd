@@ -34,7 +34,7 @@
   \item{mod.nam}{Character string used as a file label for saved model outputs.}
   \item{rtrn.model}{Logical indicating whether to return model output to R environment. Default = FALSE. Must be set to TRUE if sav.model = FALSE.}
   \item{sav.model}{Logical indicating whether to save model output to disk. Default = TRUE. Must be set to TRUE if rtrn.model = FALSE.}
-  \item{check.freq}{How long to wait in number of sampling blocks (needs to be a multiple of ni) between successive checks of convergence criteria. If NULL (default), automated convergence checking is disabled, and sampling will be capped based on max.samples.saved.}
+  \item{check.freq}{How long to wait in number of sampling blocks between successive checks of convergence criteria. If NULL (default), automated convergence checking is disabled, and sampling will be capped based on max.samples.saved.}
   \item{Rht.required}{Maximum numeric value for Rhat for any parameter required to end sampling.}
   \item{neff.required}{Minimum value for n_effective for any parameter required to end sampling.}
   \item{max.tries}{The maximum number of times to check convergence, after which runNimble will quit with warning that convergence was not reached before reaching the specified cap. Default is 10. It is possible but not recommended to set to NULL for no constraint on number of checks.}
