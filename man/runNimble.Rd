@@ -23,10 +23,10 @@
   \item{constants}{List containing all constants required to fit specified NIMBLE model.}
   \item{parameters}{String vector containing names of all parameters for which estimates are to be retained from sampler.}
   \item{max.samples.saved}{Integer that sets max samples to save across chains in final model object. Without automated convergence checking enabled, model run ends once saved samples have met or exceeded this limit. With automated convergence checking, additional thinning of posterior samples (i.e., after samples are recovered from processing clusters) is implemented as necessary to limit the size of the model object to this level.}
-  \item{par.ignore}{String vector listing parameters to be ignored when calculating convergence and sampling metrics. All parameters with names containing strings listed here will be ignored. Default is an empty vector, whereby all parameters will be considered for calculating Rhat. Ignored parameters will also be excluded from summary output table.}
-  \item{par.dontign}{String vector listing parameters that should not be ignored when calculating convergence and sampling metrics. All parameters with names containing strings listed here will not be ignored. This argument is unnecessary if 'par.ignore' is not specified.}
-  \item{par.fuzzy.track}{String vector listing parameters to designate for fuzzy evaluation of convergence. If more than (fuzzy.threshold * number of parameters) Rhats > Rht.required, sampling will continue. Default is an empty vector, whereby no fuzzy evaluation of convergence will occur.}
-  \item{fuzzy.threshold}{Threshold for fuzzy evaluation of convergence (only relevant if length(par.fuzzy.track) > 0).}
+  \item{par.ignore}{String vector listing parameters to be ignored when calculating convergence and sampling metrics. All parameters with names containing strings listed here will be ignored. Default is an empty vector, whereby all parameters will be considered for calculating Rhat. Ignored parameters will be excluded from summary output table.}
+  \item{par.dontign}{String vector listing parameters that should not be ignored when calculating convergence and sampling metrics. All parameters with names containing strings listed here will not be ignored. This argument is unnecessary if 'par.ignore' is not specified. Only relevant if automated convergence checks are enabled.}
+  \item{par.fuzzy.track}{String vector listing parameters to designate for fuzzy evaluation of convergence. If more than (fuzzy.threshold * number of parameters) Rhats > Rht.required, sampling will continue. Default is an empty vector, whereby no fuzzy evaluation of convergence will occur. Only relevant if automated convergence checks are enabled.}
+  \item{fuzzy.threshold}{Threshold for fuzzy evaluation of convergence (only relevant if length(par.fuzzy.track) > 0). Only relevant if automated convergence checks are enabled.}
   \item{nc}{Number of MCMC chains to run. Note available processing cores must equal or exceed 'nc'. Default = 2.}
   \item{ni}{Number of iterations per sampling block. Default = 2000.}
   \item{nb}{If < 1, proportion of MCMC chains to discard as burn-in. If > 1, chain length before thinning to discard as burn-in.}
@@ -34,7 +34,7 @@
   \item{mod.nam}{Character string used as a file label for saved model outputs.}
   \item{rtrn.model}{Logical indicating whether to return model output to R environment. Default = FALSE. Must be set to TRUE if sav.model = FALSE.}
   \item{sav.model}{Logical indicating whether to save model output to disk. Default = TRUE. Must be set to TRUE if rtrn.model = FALSE.}
-  \item{check.freq}{How long to wait in seconds between successive checks of convergence criteria. If NULL (default), automated convergence checking is disabled, and sampling will be capped based on max.samples.saved.}
+  \item{check.freq}{How long to wait in number of sampling blocks (needs to be a multiple of ni) between successive checks of convergence criteria. If NULL (default), automated convergence checking is disabled, and sampling will be capped based on max.samples.saved.}
   \item{Rht.required}{Maximum numeric value for Rhat for any parameter required to end sampling.}
   \item{neff.required}{Minimum value for n_effective for any parameter required to end sampling.}
   \item{max.tries}{The maximum number of times to check convergence, after which runNimble will quit with warning that convergence was not reached before reaching the specified cap. Default is 10. It is possible but not recommended to set to NULL for no constraint on number of checks.}
