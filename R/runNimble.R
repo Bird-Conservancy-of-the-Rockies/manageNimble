@@ -69,7 +69,7 @@ runNimble <-
           "directive <- readLines(directive.file)",
           "status.chain <- readLines(status.file)",
         "} else if(status.chain == 'RESUME') {",
-          "i.stop <- i + check.freq",
+          "i.stop <- i.stop + check.freq",
           "writeLines('GO', status.file)",
           "status.chain <- readLines(status.file)",
           "directive <- readLines(directive.file)",
