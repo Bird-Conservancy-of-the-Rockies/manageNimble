@@ -132,7 +132,7 @@ runNimble <-
           nb.now <- ifelse(nb<1, nb*ni*nblks, nb)
           ni.now <- ni*nblks
           
-          writeLines("PAUSE", paste0(dump.path, "/runNimbleDirective.txt"))
+          writeLines("PAUSE", directive.file)
           mod.out <- suppressWarnings(
             gatherNimble(read.path = dump.path, directive.file = directive.file,
                          burnin = nb, ni.block = ni, base.thin = nt,
