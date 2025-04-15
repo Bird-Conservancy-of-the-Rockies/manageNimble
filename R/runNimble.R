@@ -112,30 +112,20 @@ runNimble <-
                !mod.check.result & nchecks < max.tries)) {
         status.chains <- character(length = nc)
         for(cn in 1:nc) {
-          tries <- 0
-          while(length(readLines(paste0(dump.path, '/block',cn,'Status.txt'))) == 0) { # included to (hopefully) resolve occassional error: "replacement has length zero"
-            if(tries == 3) {
-              writeLines("STOP", directive.file)
-              stop("Error: nothing in Status.txt file.")
-            }
-            Sys.sleep(5)
-            tries <- tries + 1
-            } 
-          status.chains[cn] <- readLines(paste0(dump.path, '/block',cn,'Status.txt'))
+          try.status.check <- try(status.chains[cn] <- readLines(paste0(dump.path, '/block',cn,'Status.txt')))
+          while(inherits(try.status.check, "try-error")) {
+            Sys.sleep(1)
+            try.status.check <- try(status.chains[cn] <- readLines(paste0(dump.path, '/block',cn,'Status.txt')))
+          }
         }
         if(any(status.chains != "STOP")) {  # Wait for chains to finish sampling up to target amount.
           Sys.sleep (60)
           for(cn in 1:nc) {
-            tries <- 0
-            while(length(readLines(paste0(dump.path, '/block',cn,'Status.txt'))) == 0) { # included to (hopefully) resolve occassional error: "replacement has length zero"
-              if(tries == 3) {
-                writeLines("STOP", directive.file)
-                stop("Error: nothing in Status.txt file.")
-              }
-              Sys.sleep(5)
-              tries <- tries + 1
+            try.status.check <- try(status.chains[cn] <- readLines(paste0(dump.path, '/block',cn,'Status.txt')))
+            while(inherits(try.status.check, "try-error")) {
+              Sys.sleep(1)
+              try.status.check <- try(status.chains[cn] <- readLines(paste0(dump.path, '/block',cn,'Status.txt')))
             }
-            status.chains[cn] <- readLines(paste0(dump.path, '/block',cn,'Status.txt'))
           }
         } else {
           
