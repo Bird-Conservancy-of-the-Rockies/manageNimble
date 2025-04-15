@@ -113,7 +113,10 @@ runNimble <-
         for(cn in 1:nc) {
           tries <- 0
           while(length(readLines(paste0(dump.path, '/block',cn,'Status.txt'))) == 0) { # included to (hopefully) resolve occassional error: "replacement has length zero"
-            if(tries == 3) stop("Error: nothing is being written to Status.txt file after three waits.")
+            if(tries == 3) {
+              writeLines("STOP", directive.file)
+              stop("Error: nothing in Status.txt file.")
+            }
             Sys.sleep(5)
             tries <- tries + 1
             } 
@@ -124,7 +127,10 @@ runNimble <-
           for(cn in 1:nc) {
             tries <- 0
             while(length(readLines(paste0(dump.path, '/block',cn,'Status.txt'))) == 0) { # included to (hopefully) resolve occassional error: "replacement has length zero"
-              if(tries == 3) stop("Error: nothing is being written to Status.txt file after three waits.")
+              if(tries == 3) {
+                writeLines("STOP", directive.file)
+                stop("Error: nothing in Status.txt file.")
+              }
               Sys.sleep(5)
               tries <- tries + 1
             }
