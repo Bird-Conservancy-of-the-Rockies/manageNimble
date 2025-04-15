@@ -17,6 +17,7 @@ runNimble <-
     require(processx)
     require(coda)
     require(mcmcOutput)
+    if(dir.exists(dump.path)) unlink(dump.path, recursive = TRUE)
     if(!dir.exists(dump.path)) dir.create(dump.path)
     directive.file <- paste0(dump.path, "/runNimbleDirective.txt")
     writeLines("GO", directive.file)
