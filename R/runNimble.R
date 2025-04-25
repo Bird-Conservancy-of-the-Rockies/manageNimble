@@ -112,19 +112,19 @@ runNimble <-
                !mod.check.result & nchecks < max.tries)) {
         status.chains <- character(length = nc)
         for(cn in 1:nc) {
-          try.status.check <- try(status.chains[cn] <- readLines(paste0(dump.path, '/block',cn,'Status.txt')))
+          try.status.check <- try(status.chains[cn] <- readLines(paste0(dump.path, '/block',cn,'Status.txt')), silent = TRUE)
           while(inherits(try.status.check, "try-error")) {
             Sys.sleep(1)
-            try.status.check <- try(status.chains[cn] <- readLines(paste0(dump.path, '/block',cn,'Status.txt')))
+            try.status.check <- try(status.chains[cn] <- readLines(paste0(dump.path, '/block',cn,'Status.txt')), silent = TRUE)
           }
         }
         if(any(status.chains != "STOP")) {  # Wait for chains to finish sampling up to target amount.
           Sys.sleep (60)
           for(cn in 1:nc) {
-            try.status.check <- try(status.chains[cn] <- readLines(paste0(dump.path, '/block',cn,'Status.txt')))
+            try.status.check <- try(status.chains[cn] <- readLines(paste0(dump.path, '/block',cn,'Status.txt')), silent = TRUE)
             while(inherits(try.status.check, "try-error")) {
               Sys.sleep(1)
-              try.status.check <- try(status.chains[cn] <- readLines(paste0(dump.path, '/block',cn,'Status.txt')))
+              try.status.check <- try(status.chains[cn] <- readLines(paste0(dump.path, '/block',cn,'Status.txt')), silent = TRUE)
             }
           }
         } else {
