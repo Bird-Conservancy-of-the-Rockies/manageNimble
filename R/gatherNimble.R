@@ -50,10 +50,11 @@ gatherNimble <- function(read.path, burnin, ni.block, base.thin, max.samples.sav
       as.mcmc(mat[-c(1:burnin.needed), ])
     })
   }
-  chain.length.now <- dim(gathr[[1]])[1] / nc
+  chain.length.now <- dim(gathr[[1]])[1]
   if(is.null(max.samples.saved)) max.samples.saved <- chain.length.now
   if(max.samples.saved < chain.length.now) {
-    ind.sav <- round(seq(1, max.samples.saved, length.out = max.samples.saved))
+    ind.sav <- unique(round(seq(1, chain.length.now,
+                                length.out = max.samples.saved)))
     additional.thin.rate <- chain.length.now / length(ind.sav)
     gathr <- lapply(gathr, FUN = function(x) as.mcmc(x[ind.sav,])) %>%
       as.mcmc.list()
