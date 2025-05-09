@@ -13,7 +13,7 @@
            par.ignore = c(), par.dontign = c(), par.fuzzy.track = c(), fuzzy.threshold = 0.05,
            nc = 2, ni = 2000, nb = 0.5, nt = 10, mod.nam = "mod",
            rtrn.model = F, sav.model = T, check.freq = NULL,
-           Rht.required = 1.1, neff.required = 100, max.tries = NULL,
+           Rht.required = 1.1, neff.required = 100, max.tries = 10,
            dump.path = "dump", SamplerSourcePath = NA, delete.blocks = TRUE)
 }
 \arguments{
