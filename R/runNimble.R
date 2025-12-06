@@ -231,7 +231,7 @@ runNimble <-
                     !mod.check.result & nchecks < max.tries)) {
             for(cn in 1:nc) writeLines("RESUME", paste0(dump.path, '/block',cn,'Status.txt'))
             writeLines("GO", directive.file)
-            suppressWarnings(rm(mod, mod.out, mod.check, sumTab, sumTab.focal))
+            suppressWarnings(rm(mod, mod.check, sumTab, sumTab.focal)) # mod.out - need mod.out below, so keep it.
             gc()
           }
         } # Close if(any(status.chains != "STOP")) {} else {}
