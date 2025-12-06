@@ -105,7 +105,7 @@ runNimble <-
     gc(verbose = FALSE)
     mod.check.result <- FALSE
     run.complete <- FALSE
-    nchecks <- 1
+    nchecks <- 0
     while(sum(str_detect(list.files(dump.path), "mod_chn")) < nc) {Sys.sleep(10)} # Wait until proc has written at least one file for each chain before going on.
     if(automate.convergence.checks) {
       while(ifelse(is.null(max.tries), !mod.check.result,
@@ -221,7 +221,7 @@ runNimble <-
                                                                "character",
                                                                "character"))
           check.log <- check.log %>% bind_rows(
-            data.frame(Model = mod.nam, Check = nchecks, Time = as.character(Sys.time()),
+            data.frame(Model = mod.nam, Check = nchecks + 1, Time = as.character(Sys.time()),
                        Status = status)
           )
           write.csv(check.log, check.log.file, row.names = FALSE)
