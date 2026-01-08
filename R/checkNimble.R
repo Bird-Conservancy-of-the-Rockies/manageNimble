@@ -22,12 +22,8 @@ checkNimble <- function(mcmcOutput, Rht.required = 1.1, neff.required = 100,
     mutate(Parameter = row.names(s)) %>%
     dplyr::select(Parameter, mean:f)
   if(length(par.ignore) > 0) {
-    if(length(par.dontign) == 0) {
-      ind.ignore <- which(str_detect_any(s$Parameter, par.ignore))
-    } else {
-      ind.ignore <- which(str_detect_any(s$Parameter, par.ignore) &
-                            !str_detect_any(s$Parameter, par.dontign))
-    }
+    ind.ignore <- which(str_split(s$Parameter, "\\[", simplify = TRUE)[,1] %in%
+                          par.ignore)
     if(length(ind.ignore) > 0) {
       s.focal <- s %>% slice(-ind.ignore)
     } else {
