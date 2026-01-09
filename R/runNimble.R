@@ -163,12 +163,7 @@ runNimble <-
           sumTab <- sumTab.focal <- mod.check$s
           if(length(par.ignore) > 0) {
             sumTab.focal <- sumTab %>%
-              filter(!str_detect_any(Parameter, par.ignore))
-            if(length(par.dontign) > 0) {
-              sumTab.focal <- sumTab.focal %>% bind_rows(
-                sumTab %>% filter(str_detect_any(Parameter, par.dontign))
-              )
-            }
+              filter(!(str_split(Parameter, "\\[", simplify = TRUE)[,1]) %in% par.ignore)
           }
           if(any(is.na(sumTab.focal$Rhat)) | any(is.na(sumTab.focal$n.eff))) {
             # proc$kill_tree()
