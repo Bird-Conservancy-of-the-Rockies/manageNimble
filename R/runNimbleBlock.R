@@ -13,7 +13,12 @@ runNimbleBlock <- function (mod.lst = NULL, comp.mcmc = NULL, n.iter = 1000,
   # here only to decide whether mvSamples2 should be written to the dump file.
   # It must still be supplied on those calls for the second set to be saved.
   require(nimble)
-  if(!is.na(SamplerSourcePath)) require(nimbleHMC)
+  if(!is.na(SamplerSourcePath)) {
+    if(!requireNamespace("nimbleHMC", quietly = TRUE))
+      stop("Package 'nimbleHMC' is required when SamplerSourcePath is supplied. ",
+           "Install it with install.packages('nimbleHMC').")
+    require(nimbleHMC)
+  }
   stopifnot(sum(c(is.null(mod.lst), is.null(comp.mcmc))) == 1)
 
   if (!is.null(mod.lst)) {
@@ -35,12 +40,18 @@ runNimbleBlock <- function (mod.lst = NULL, comp.mcmc = NULL, n.iter = 1000,
     comp.mcmc$run(niter = n.iter, reset = FALSE, resetMV = TRUE)
   }
   samp <- as.matrix(comp.mcmc$mvSamples)
+  # Write to a temp file and rename into place. countNimbleBlocks()/gatherNimble()
+  # list dump.file.path's final name to decide what is safe to read; an atomic
+  # rename means a file visible under that name is always complete, removing the
+  # need for the Linux-only lsof polling that used to guard against partial reads.
+  tmp.path.file <- paste0(dump.file.path, ".tmp")
   if(length(monitors2) > 0) {
     samp2 <- as.matrix(comp.mcmc$mvSamples2)
-    save(samp, samp2, file = dump.file.path)
+    save(samp, samp2, file = tmp.path.file)
   } else {
-    save(samp, file = dump.file.path)
+    save(samp, file = tmp.path.file)
   }
+  file.rename(tmp.path.file, dump.file.path)
 
   return(comp.mcmc)
 }

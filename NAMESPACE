@@ -1,1 +1,12 @@
-exportPattern("^[[:alpha:]]+")
+export(runNimble)
+export(checkNimble)
+export(mcmcOutputSubset)
+export(runNimbleBlock)
+
+importFrom(coda, as.mcmc, as.mcmc.list)
+importFrom(dplyr, "%>%", as_tibble, bind_rows, filter, mutate, pull, slice)
+importFrom(mcmcOutput, mcmcOutput)
+importFrom(nimble, buildMCMC, compileNimble, configureMCMC, nimbleModel)
+importFrom(processx, process)
+importFrom(stringr, str_detect, str_split, str_sub)
+importFrom(utils, read.csv, write.csv)

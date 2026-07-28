@@ -134,3 +134,60 @@ Starting points, not an exhaustive list.
 - Backward compatibility matters — other analyses depend on this package. Flag any
   proposed change that would alter results or convergence behaviour for an existing
   caller, so it can be taken deliberately rather than by accident.
+
+### What can be tested on Windows
+
+Only two things make the package Linux-only: `process$new(command = "parallel", ...)`
+in `runNimble()`, and `system2("lsof", ...)` in the gather functions. Everything else
+is portable, so do as much as possible locally.
+
+**Run these regardless:**
+
+- `parse()` on every file in `R/`.
+- `R CMD check` / `devtools::check()`. This runs fine on Windows and its `codetools`
+  pass reports undefined global variables — which is exactly the class of bug already
+  found by hand (`species`, `s.focal`). Expect it also to flag the missing
+  `gatherNimble2.Rd`, undocumented new arguments, and the `Suggests:`-should-be-
+  `Imports:` problem.
+
+**Unit-testable on Windows with no server:**
+
+- `countNimbleBlocks()` — pure function over `list.files()`. Create a temp directory
+  containing empty files named `mod_chn1_1.RData`, `mod_chn1_2.RData`,
+  `mod_chn2_1.RData` and so on, and assert the chain truncation, block renumbering
+  and burn-in dropping. The renumbering path (the `block numbers are getting skipped`
+  comment) is worth targeted tests with deliberately gapped filenames.
+- `checkNimble()` — takes an `mcmcOutput` and returns pass/fail. Construct small
+  synthetic `mcmcOutput` objects with known Rhat and n.eff patterns and assert the
+  verdict. **This is where the known bugs were**, so it is the highest-value target.
+  Cover at minimum: `par.ignore` empty vs not, `par.fuzzy.track` empty vs not, both
+  together, fuzzy parameters above and below `fuzzy.threshold`, and NA Rhat among
+  fuzzy parameters.
+- `mcmcOutputSubset()` — pure function; test the `par.keep`/`par.drop` interaction
+  directly, which should settle the open question about `par.dontign`.
+- `runNimbleBlock()` — no `parallel`, no `lsof`. Runs on Windows. Fit a toy NIMBLE
+  model (a few nodes, a handful of iterations) and check that the dump file is
+  written and, with `monitors2` supplied, contains both `samp` and `samp2` with the
+  expected dimensions and thinning. **This exercises essentially all of the new
+  feature.**
+- `gatherNimble2()` — hand-write two or three fake block dumps containing `samp` and
+  `samp2` and check the concatenation and burn-in handling. Note that
+  `system2("lsof", ...)` on Windows warns and returns nothing, so the wait loop is
+  skipped; confirm that rather than assume it.
+- **The generated worker script.** `runNimble()` builds `ModRunScript.R` as a
+  character vector passed to `writeLines`. You can't execute it on Windows, but you
+  can generate it and `parse()` the result. This validates the multi-line
+  `runNimbleBlock(...)` calls that were recently split across `writeLines` elements —
+  a real risk, since a misplaced comma there fails only at runtime inside a spawned
+  process, where the error is easy to miss.
+
+**Needs the Linux server:**
+
+- `runNimble()` end to end: the `parallel` launch, the file-based `GO`/`PAUSE`/`STOP`
+  coordination, the convergence loop, worker failure handling.
+
+Note that workers are separate `Rscript` processes that call `require(manageNimble)`,
+so `devtools::load_all()` will not reach them — the server test needs the package
+actually installed. Install it to a private library and point `R_LIBS_USER` at it for
+that session; `processx` passes the parent environment to the workers, so they will
+find it, and the shared library stays untouched for anything else running.
