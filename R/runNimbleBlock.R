@@ -7,13 +7,13 @@ runNimbleBlock <- function (mod.lst = NULL, comp.mcmc = NULL, n.iter = 1000,
   
   if (!is.null(mod.lst)) {
     nm <- nimbleModel(code = mod.lst[[1]], constants = mod.lst[[2]], data = mod.lst[[3]], inits = mod.lst[[4]], calculate = FALSE)
-    cat(paste0("Initialization info:\n", nm$initializeInfo(), "\n"))
-    cat(paste0("Calculate check: ", nm$calculate(), "\n"))
+    # cat(paste0("Initialization info:\n", nm$initializeInfo(), "\n")) # Worth doing outside function but pointless here.
     nm.conf <- configureMCMC(nm, monitors = mod.lst[[5]], thin = n.thin)
     if(!is.na(SamplerSourcePath)) source(SamplerSourcePath)
     nm.mcmc <- buildMCMC(nm.conf)
     nm.C <- compileNimble(nm, dirName = tmp.path)
     comp.mcmc <- compileNimble(nm.mcmc, project = nm.C, dirName = tmp.path)
+    # cat(paste0("Calculate check: ", comp.mcmc$calculate(), "\n")) # Worth doing outside function but pointless here.
     comp.mcmc$run(niter = n.iter)
   } else {
     comp.mcmc$run(niter = n.iter, reset = FALSE, resetMV = TRUE)
