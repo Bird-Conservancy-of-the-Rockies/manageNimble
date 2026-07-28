@@ -6,8 +6,27 @@ runNimble <-
            rtrn.model = F, sav.model = T, check.freq = NULL,
            Rht.required = 1.1, neff.required = 100,
            max.tries = 10, dump.path = "dump",
-           SamplerSourcePath = NA, delete.blocks = TRUE) {
+           SamplerSourcePath = NA, delete.blocks = TRUE,
+           parameters2 = character(), nt2 = NULL) {
+  # parameters2 / nt2: optional second set of monitored parameters saved at its
+  # own thinning rate, for quantities too large to retain at nt - latent state
+  # arrays, for example. They take no part in convergence checking; they are
+  # gathered once at the end of the run and written to
+  # paste0(mod.nam, "_monitors2.rds") as a plain [ndraw, nparam] matrix with
+  # chains stacked.
+  #
+  # nt2 defaults to ni, i.e. one retained draw per block per chain. That suits
+  # the block architecture: each block dump stays small, and draws accumulate to
+  # roughly nblks * nc. Set it smaller for more draws at proportionally more
+  # disk. Defaults to no second set, in which case nothing changes.
+    if(length(parameters2) > 0 && is.null(nt2)) nt2 <- ni
+    if(length(parameters2) == 0) nt2 <- 1
     if(!rtrn.model & !sav.model) stop("There is no way for runNimble to save output. Set either rtrn.model = TRUE or sav.model = TRUE.")
+    if(length(parameters2) > 0 && any(parameters2 %in% parameters))
+      stop("Parameters appear in both parameters and parameters2: ",
+           paste(intersect(parameters2, parameters), collapse = ", "),
+           ". The second monitor set is for quantities too large to retain at ",
+           "thinning rate nt; monitoring them in both sets defeats that purpose.")
     if(nb < 1 & ((ni - (ni * nb)) / nt) <= 100) stop("Increase iterations (ni), reduce burn-in, or reduce thinning. Too few samples for calculating Rhat.")
     if(nb >= 1 & ((ni - nb) / nt) <= 100) stop("Increase iterations (ni), reduce burn-in, or reduce thinning. Too few samples for calculating Rhat.")
     automate.convergence.checks <- !is.null(check.freq)
@@ -34,7 +53,8 @@ runNimble <-
     }
     save(list = c("model.path", "constants", "data", "inits", "parameters", "ni",
                   "nt", "dump.path", "SamplerSourcePath", "check.freq",
-                  "automate.convergence.checks", "directive.file"),
+                  "automate.convergence.checks", "directive.file",
+                  "parameters2", "nt2"),
          file = paste0(dump.path, "/NimbleObjects.RData"))
     #[Create R script for kicking off nimble run here]. Call it "ModRunScript.R"
     #___________________________________________________________________________#
@@ -49,7 +69,8 @@ runNimble <-
       "i <- 1",
       "dump.file.path <- paste0(dump.path, '/mod_chn', chn, '_', i, '.RData')",
       "mod.comp <- runNimbleBlock(mod.lst = list(model, constants, data, inits, parameters, SamplerSourcePath = SamplerSourcePath),",
-      "n.iter = ni, n.thin = nt, tmp.path = paste0(dump.path, '/tmp', chn), dump.file.path = dump.file.path)",
+      "n.iter = ni, n.thin = nt, tmp.path = paste0(dump.path, '/tmp', chn), dump.file.path = dump.file.path,",
+      "monitors2 = parameters2, n.thin2 = nt2)",
       "if(automate.convergence.checks) {",
         "status.file <- paste0(dump.path, '/block',chn,'Status.txt')",
         "status.chain <- readLines(status.file)",
@@ -61,7 +82,8 @@ runNimble <-
         "if(directive == 'GO' & status.chain == 'GO' & i < i.stop) {",
           "i <- i + 1",
           "dump.file.path <- paste0(dump.path, '/mod_chn', chn, '_', i, '.RData')",
-          "mod.comp <- runNimbleBlock(comp.mcmc = mod.comp, n.iter = ni, tmp.path = paste0(dump.path, '/tmp', chn), dump.file.path = dump.file.path)",
+          "mod.comp <- runNimbleBlock(comp.mcmc = mod.comp, n.iter = ni, tmp.path = paste0(dump.path, '/tmp', chn), dump.file.path = dump.file.path,",
+          "monitors2 = parameters2)",
           "directive <- readLines(directive.file)",
         "} else if(directive == 'GO' & status.chain == 'GO' & i == i.stop) {",
           "writeLines('STOP', status.file)",
@@ -83,7 +105,8 @@ runNimble <-
         "if(directive == 'GO') {",
           "i <- i + 1",
           "dump.file.path <- paste0(dump.path, '/mod_chn', chn, '_', i, '.RData')",
-          "mod.comp <- runNimbleBlock(comp.mcmc = mod.comp, n.iter = ni, tmp.path = paste0(dump.path, '/tmp', chn), dump.file.path = dump.file.path)",
+          "mod.comp <- runNimbleBlock(comp.mcmc = mod.comp, n.iter = ni, tmp.path = paste0(dump.path, '/tmp', chn), dump.file.path = dump.file.path,",
+          "monitors2 = parameters2)",
           "directive <- readLines(directive.file)",
         "} else if(directive == 'PAUSE') {",
           "Sys.sleep(10)",
@@ -161,9 +184,16 @@ runNimble <-
           mcmc.info <- c(nchains = nc, niterations = ni.now,
                          burnin = nb.now, nthin = nt.now)
           sumTab <- sumTab.focal <- mod.check$s
-          if(length(par.ignore) > 0) {
+          # Exclude par.fuzzy.track as well as par.ignore. checkNimble() now
+          # governs fuzzy-tracked parameters by fuzzy.threshold and permits some
+          # of them to be unconverged or to have an uncomputable Rhat; leaving
+          # them in sumTab.focal would let the "not being sampled" check below
+          # halt the run for exactly the parameters the fuzzy tolerance exists to
+          # accommodate.
+          if(length(c(par.ignore, par.fuzzy.track)) > 0) {
             sumTab.focal <- sumTab %>%
-              filter(!(str_split(Parameter, "\\[", simplify = TRUE)[,1]) %in% par.ignore)
+              filter(!(str_split(Parameter, "\\[", simplify = TRUE)[,1]) %in%
+                       c(par.ignore, par.fuzzy.track))
           }
           if(any(is.na(sumTab.focal$Rhat)) | any(is.na(sumTab.focal$n.eff))) {
             # proc$kill_tree()
@@ -181,15 +211,15 @@ runNimble <-
               writeLines("STOP", directive.file)
               stop("Stopped model run because Rhat not calculated.")
             }
-            for(p in 1:length(par.fuzzy.track)) {
-              pfuz <- par.fuzzy.track[p]
-              Rht.fuzzy <- c(Rht.fuzzy,
-                             sumTab %>% filter(str_sub(Parameter, 1, nchar(pfuz) + 1) == str_c(pfuz, "[")) %>%
-                               pull(Rhat))
-            }
-            Rht.fuzzy <- Rht.fuzzy[-1]
-            prp.fuzzy.not.coverged <- (sum(round(Rht.fuzzy, digits = 1) > Rht.required, na.rm = T) /
-                                         length(Rht.fuzzy))
+            # Recomputed here only for the status log. Kept identical to the
+            # calculation in checkNimble(), including NAs in the numerator, so
+            # the logged proportion matches the one that decided convergence.
+            Rht.fuzzy <- sumTab %>%
+              filter(str_split(Parameter, "\\[", simplify = TRUE)[,1] %in% par.fuzzy.track) %>%
+              pull(Rhat)
+            prp.fuzzy.not.coverged <-
+              (sum(round(Rht.fuzzy, digits = 1) > Rht.required, na.rm = TRUE) +
+                 sum(is.na(Rht.fuzzy))) / length(Rht.fuzzy)
           }
           mod <- list(mcmcOutput = mod.out$out, summary = sumTab, mcmc.info = mcmc.info)
           if(sav.model) R.utils::saveObject(mod, mod.nam)
@@ -240,6 +270,13 @@ runNimble <-
         if(sav.model) R.utils::saveObject(mod, mod.nam)
         if(rtrn.model) assign("mod", mod.nam, envir = .GlobalEnv)
       }
+      # Gather the second monitor set, if any, before the block dumps are
+      # removed. Done once at the end rather than at every convergence check:
+      # these parameters take no part in convergence and are typically large.
+      if(length(parameters2) > 0) {
+        gatherNimble2(read.path = dump.path, burnin = nb, ni.block = ni,
+                      save.path = paste0(mod.nam, "_monitors2.rds"))
+      }
       if(delete.blocks) unlink(dump.path, recursive = TRUE)
       gc(verbose = FALSE)
     } else {
@@ -288,6 +325,13 @@ runNimble <-
         } # Close if(do.gather.check) loop
         nchecks <- nchecks + 1
       } # Close while(!run.complete)
+      # Gather the second monitor set, if any, before the block dumps are
+      # removed. Done once at the end rather than at every convergence check:
+      # these parameters take no part in convergence and are typically large.
+      if(length(parameters2) > 0) {
+        gatherNimble2(read.path = dump.path, burnin = nb, ni.block = ni,
+                      save.path = paste0(mod.nam, "_monitors2.rds"))
+      }
       if(delete.blocks) unlink(dump.path, recursive = TRUE)
       gc(verbose = FALSE)
     }
