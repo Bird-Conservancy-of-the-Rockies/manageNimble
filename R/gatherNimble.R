@@ -15,7 +15,28 @@ gatherNimble <- function(read.path, burnin, ni.block, base.thin, max.samples.sav
   chns <- unique(m[,"chn"])
   burnin <- cNB$burnin
   burnin.realized <- cNB$burnin.realized
-  burnin.needed <- (burnin - burnin.realized) / base.thin
+  # burnin - burnin.realized is the residual burn-in falling inside the first
+  # retained block (in [0, ni.block) by construction in countNimbleBlocks()),
+  # which is generally not an exact multiple of base.thin. floor() gives the
+  # number of already-thinned draws whose iteration index is strictly before
+  # the true burn-in cutoff (each successive draw advances the iteration index
+  # by base.thin, so that many complete base.thin-steps fit inside the
+  # residual); that is exactly the count to drop, with every remaining draw
+  # landing at or past the cutoff.
+  #
+  # Flooring here, rather than leaving burnin.needed fractional, is essential:
+  # row.start below is seeded from it and nrow(samp) (always a whole number,
+  # checked at line ~64) is added to it once per block, so an unflored
+  # fractional burnin.needed makes row.start, and therefore every element of
+  # block.rows, fractional for the rest of the chain. block.rows %in% ind.sav
+  # then compares fractional values against ind.sav's integers and never
+  # matches, so `keep` is empty for every block, `pieces` ends up entirely
+  # empty, do.call(rbind, list()) returns NULL, and as.mcmc(NULL) errors -
+  # deterministically, not as a rare edge case: this fires whenever the
+  # residual (in iterations) isn't an exact multiple of base.thin, which
+  # includes the very first convergence check whenever burn-in hasn't been
+  # fully satisfied by whole blocks yet.
+  burnin.needed <- floor((burnin - burnin.realized) / base.thin)
   if(burnin.needed < 0) {
     if(directive.file != "") writeLines("STOP", directive.file)
     stop("Additional burnin needed is negative. countNimbleBlocks burned extra samples and needs to be checked.")

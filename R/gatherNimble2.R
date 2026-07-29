@@ -26,7 +26,29 @@ gatherNimble2 <- function(read.path, burnin, ni.block, nt2 = 1, save.path = NULL
   }
   chns <- unique(m[, "chn"])
 
-  burnin.needed <- (cNB$burnin - cNB$burnin.realized) / nt2
+  # cNB$burnin - cNB$burnin.realized is the residual burn-in falling inside the
+  # first retained block (in [0, ni.block) by construction in
+  # countNimbleBlocks()), which is generally not an exact multiple of nt2 - at
+  # the common nt2 = ni.block setting, it practically never is. floor() gives
+  # the number of already-thinned draws whose iteration index is strictly
+  # before the true burn-in cutoff (each successive draw advances the
+  # iteration index by nt2, so that many complete nt2-steps fit inside the
+  # residual); that is exactly the count to drop, with every remaining draw
+  # landing at or past the cutoff.
+  #
+  # Truncating via floor() here, rather than leaving burnin.needed fractional,
+  # also avoids a sharp R trap downstream, specifically when burnin.needed
+  # lands in [0, 1) - which it always did at nt2 = ni.block whenever the
+  # residual wasn't exactly 0. seq_len() truncates a fractional argument, and
+  # for x in [0, 1) that truncation is seq_len(0) = integer(0); for x >= 1 it
+  # already coincides with seq_len(floor(x)), so this only changes behaviour
+  # below 1. mat[-integer(0), , drop=FALSE] then silently returns ZERO rows
+  # rather than all of them - a zero-length index vector carries no sign, so R
+  # cannot tell "exclude nothing" from "select nothing" and defaults to the
+  # latter. Every chain therefore came back empty whenever the residual, in
+  # units of nt2, was a positive fraction below one whole draw - the common
+  # case, not a rare edge, at nt2 = ni.block - with no warning at all.
+  burnin.needed <- floor((cNB$burnin - cNB$burnin.realized) / nt2)
   if(burnin.needed < 0)
     stop("gatherNimble2: additional burnin needed is negative. countNimbleBlocks ",
          "burned extra samples and needs to be checked.")

@@ -90,6 +90,53 @@ test_that("FIXED (F8): residual burn-in is now applied to the second set too", {
   expect_equal(min(g$out[, "iter"]), 251)
 })
 
+test_that("FIXED: fractional burnin.needed no longer silently empties every chain", {
+  # burnin.needed <- (residual) / nt2 is generally not a whole number - at the
+  # nt2 = ni.block setting this project actually uses (one retained draw per
+  # block, at the block's last iteration), it practically never is. Before this
+  # fix, mat[-seq_len(burnin.needed), , drop = FALSE] hit a sharp R trap:
+  # seq_len() truncates a fractional argument (seq_len(0.8) is seq_len(0)), and
+  # negative-indexing by a zero-length vector selects nothing rather than
+  # excluding nothing - a zero-length index carries no sign, so R can't tell
+  # "drop 0 rows" from "keep 0 rows" and silently picked the latter. Every
+  # chain came back with zero rows, with no warning, no error - just silently
+  # wrong. Reproduces the exact reported scenario: nb = 0.4, ni.block = 2010,
+  # nt2 = ni.block, nblks not a multiple of 5.
+  d <- make_dump_dir(list(1:7, 1:7), ni.block = 2010, with_samp2 = TRUE, nt2 = 2010)
+
+  # burnin = 0.4*2010*7 = 5628; burnin.block = floor(5628/2010) = 2 ->
+  # burnin.realized = 4020; residual = 1608; burnin.needed = 1608/2010 = 0.8.
+  # floor(0.8) = 0: with one draw per block sampled at the block's LAST
+  # iteration, that draw is always past the true cutoff by construction (the
+  # block spans up to (burnin.block+1)*ni.block > burnin), so nothing should
+  # be trimmed - blocks 3-7 (5 blocks) survive whole for both chains.
+  o <- gatherNimble2(d, burnin = 0.4, ni.block = 2010, nt2 = 2010)
+
+  expect_false(is.null(o))
+  expect_gt(nrow(o), 0)
+  expect_equal(nrow(o), 10)                      # 2 chains x 5 surviving blocks
+  expect_equal(as.vector(table(o[, "chain2"])), c(5L, 5L))
+  expect_true(all(o[, "iter2"] > 5628))          # every retained draw is past the cutoff
+})
+
+test_that("residual burn-in trimming drops exactly the draws before the true cutoff (floor > 0)", {
+  # Not a regression test for the bug above - seq_len(x) for x >= 1 already
+  # coincides with seq_len(floor(x)), so this scenario (burnin.needed = 1.2)
+  # passes identically whether or not the fix is applied; the bug is specific
+  # to burnin.needed landing in [0, 1). This is a plain correctness check of
+  # the trimming logic itself: residual/nt2 = 120/100 = 1.2, floor() = 1. The
+  # first retained block samples samp2 at iterations 100 and 200; 100 is
+  # before the true cutoff (120) and must be dropped, 200 is past it and must
+  # survive.
+  d <- make_dump_dir(list(1:4, 1:4), ni.block = 250, with_samp2 = TRUE, nt2 = 100)
+
+  o <- gatherNimble2(d, burnin = 120, ni.block = 250, nt2 = 100)
+
+  expect_false(100 %in% o[, "iter2"])
+  expect_true(200 %in% o[, "iter2"])
+  expect_equal(nrow(o), 2 * (4 * 2 - 1))          # 2 chains x (4 blocks x 2 draws - 1 dropped)
+})
+
 test_that("FIXED (F9): chains contributing unequal numbers of draws now warns", {
   # If one block dump lacks samp2 - an older dump, or a block written before
   # parameters2 was added - that chain contributes fewer draws and the stacked

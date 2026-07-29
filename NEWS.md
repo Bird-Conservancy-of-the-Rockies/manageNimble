@@ -1,3 +1,58 @@
+# manageNimble 0.1.0
+
+First version number past the `0.0` development baseline, reflecting the
+review pass documented below (a genuine overhaul: new arguments, a memory
+redesign, several results-changing fixes, `NAMESPACE` changes to the exported
+API - not a patch) plus the two follow-up fixes on top of it, neither of which
+was ever released or installed as its own separately-numbered version.
+
+## `gatherNimble()` had the same fractional-`burnin.needed` bug as `gatherNimble2()`, in a different guise
+
+Reported and fixed separately from the `gatherNimble2()` fix documented under
+0.0 below (which had already flagged this as a suspected sibling issue and
+left it deliberately untouched pending confirmation). `gatherNimble()` computed
+`burnin.needed <- (burnin - burnin.realized) / base.thin` and fed it, unfloored,
+into `row.start <- 1 - burnin.needed`, then accumulated
+`row.start <<- row.start + nrow(samp)` once per block. Whenever the residual
+burn-in wasn't an exact multiple of `base.thin` - not a rare edge case, but the
+deterministic outcome for most block counts under real-world `ni`/`nb`/`nt`
+combinations - `row.start`, and therefore every element of the per-block
+`block.rows <- row.start:(row.start + nrow(samp) - 1)` sequence, was fractional
+for the rest of that chain. `block.rows %in% ind.sav` then compared fractional
+values against `ind.sav`'s integers and never matched, so every block's `keep`
+was empty, `pieces` ended up entirely empty, `do.call(rbind, list())` returned
+`NULL`, and `as.mcmc(NULL)` raised `attempt to set an attribute on NULL`.
+
+Confirmed by execution against the settings a real production run was about to
+use (`ni.block = 2010`, `nb = 0.4`, `base.thin = 10`): fractional at every block
+count except exact multiples of 5, including `nblks = 1` - meaning this fired
+deterministically on the very first automated convergence check, before the run
+produced any usable output. Unlike the `gatherNimble2()` case, this fails loudly
+(a hard error) rather than silently returning empty data, but a run that cannot
+complete its first convergence check is still a production blocker.
+
+Fixed the same way as `gatherNimble2()`: `burnin.needed` is now floored at the
+point it's computed. Since `nrow(samp)` is always a whole number (enforced by
+the existing `rows.per.block` consistency check), flooring once at the source
+is sufficient - `row.start` and its per-block accumulation stay integer for the
+rest of the chain, with no separate flooring needed downstream. Verified not
+just for row counts but for the actual retained iteration values (no
+off-by-one, no gaps, exact respect of the burn-in cutoff) at the reported
+`nblks = 1` and `nblks = 7` cases, plus an `nblks = 5` control (where the
+residual was already exactly 0, so this case was never affected).
+
+Re-scanned the rest of `R/` for the same pattern (a computed, non-literal value
+feeding `seq_len()`, a `:` sequence, or an `%in%` comparison against an integer
+vector) and found no further instances: `countNimbleBlocks()`'s uses are all
+counts or parsed integers; `checkNimble()`'s `%in%` uses are character-name
+matching or exact `Inf`/`-Inf` membership tests, not index correspondence; and
+`mcmcOutputSubset()`'s `nrow(mcmcOutput)/nc` division is protected by an
+invariant `coda::as.mcmc.list()` itself enforces (equal-length chains), not
+reachable through any normal call path. `gatherNimble()`'s own
+`rows.per.block <- ni.block / base.thin` can also be fractional in principle,
+but is already caught by a loud, clear `stop()` rather than failing silently -
+a distinct, lower-severity issue, left untouched.
+
 # manageNimble 0.0
 
 This release implements every finding from a full code review of `R/` (34
@@ -12,6 +67,31 @@ Backward compatibility: unless marked **CHANGES RESULTS**, no existing call to
 `runNimble()`, `checkNimble()`, `mcmcOutputSubset()`, or `runNimbleBlock()`
 changes its output. `parameters2`/`nt2` remain fully optional and inert at their
 defaults.
+
+## Follow-up fix: F8's own burn-in trim silently emptied every chain
+
+Reported after the review pass below, in testing ahead of a real analysis run,
+and fixed separately: `gatherNimble2()`'s residual burn-in trim (finding F8,
+below) computed `burnin.needed <- (residual) / nt2` and then did
+`mat[-seq_len(burnin.needed), ]`. Whenever `burnin.needed` landed strictly
+between 0 and 1 — the common case at `nt2 = ni.block` (one retained draw per
+block), not a rare edge case — `seq_len()` truncated it to `seq_len(0)` =
+`integer(0)`, and `mat[-integer(0), , drop = FALSE]` silently returned **zero
+rows** rather than all of them: a zero-length index vector carries no sign, so
+R can't distinguish "exclude nothing" from "select nothing" and defaults to
+the latter. Every chain came back empty, with no warning and no error.
+
+Fixed by flooring `burnin.needed` at the point it's computed. `floor()` gives
+the number of already-thinned draws whose iteration index is strictly before
+the true burn-in cutoff — exactly the count that should be dropped, since
+each successive retained draw advances the iteration index by `nt2`. For
+`burnin.needed >= 1` this is unchanged from before (`seq_len()`'s truncation
+already coincided with `floor()` there); the bug, and the fix, are specific to
+the `[0, 1)` range. Confirmed `gatherNimble()` has the same root-cause
+fragility in its own row-index arithmetic (a fractional `burnin.needed`
+corrupts a `:`-sequence there instead), but it errors loudly rather than
+returning silently-wrong data, and was left untouched pending a deliberate,
+separate decision.
 
 ## Silent wrongness (highest priority — could make a converged verdict wrong)
 

@@ -1,7 +1,7 @@
 Package: manageNimble
 Type: Package
 Title: Manage Nimble
-Version: 0.0
+Version: 0.1.0
 Date: 2025-03-31
 Author: Quresh S. Latif, Bryan L. Nuse
 Maintainer: Quresh Latif <quresh.latif@birdconservancy.org>
