@@ -27,7 +27,10 @@
 }
 
 \author{
-  Bryan L. Nuse and Quresh S. Latif, Bird Conservancy of the Rockies
+  Bryan L. Nuse and Quresh S. Latif, Bird Conservancy of the Rockies.
+
+  Substantially revised with Claude (Anthropic) assistance during a full code review and in
+  follow-up bug fixes (including a memory-usage redesign); see \code{NEWS.md} for what changed.
 }
 \keyword{internal}
 \keyword{nimble}

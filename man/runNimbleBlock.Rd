@@ -26,7 +26,10 @@
   The compiled NIMBLE MCMC object (\code{comp.mcmc}), for use on the next call as this chain's \code{comp.mcmc} argument. As a side effect, writes \code{dump.file.path} containing \code{samp} (a matrix of posterior samples for \code{parameters}) and, if \code{monitors2} is non-empty, \code{samp2} (the second monitor set).
 }
 \author{
-  Bryan L. Nuse and Quresh S. Latif, Bird Conservancy of the Rockies
+  Bryan L. Nuse and Quresh S. Latif, Bird Conservancy of the Rockies.
+
+  Substantially revised with Claude (Anthropic) assistance during a full code review; see
+  \code{NEWS.md} for what changed.
 }
 
 \keyword{nimble}

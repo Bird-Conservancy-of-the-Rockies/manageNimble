@@ -1,3 +1,60 @@
+# manageNimble 0.2.0
+
+## New function: `forceFinishNimble()`
+
+Generalizes an ad hoc project-level script (originally written to manually finish a
+slow-to-converge species fit rather than wait out `runNimble()`'s own `max.tries` loop) into a
+proper package function. Given a `runNimble()` `dump.path` - live or abandoned - it gathers
+whatever blocks have been checkpointed so far under a manually-specified burn-in, checks
+convergence the same way `runNimble()` itself does, and either just reports/plots the result
+(`commit = FALSE`, the default - safe to call repeatedly against a still-growing dump while you
+pick a burn-in) or assembles and saves the same list structure `runNimble()` produces
+(`commit = TRUE`). `ni`/`nt` are recovered automatically from the dump directory's own
+`NimbleObjects.RData` rather than asked of the caller, so there's no way to interpret the block
+files under a mismatched configuration. A live-process safety check (via `pgrep`, matching on
+`dump.path`) hard-blocks `commit = TRUE` while the run is still writing new blocks, the same
+protection the originating script had; it degrades to a warning on platforms without `pgrep`
+rather than silently skipping.
+
+Deliberately left out of this generalization (callers needing it should layer it on top, as the
+originating project-specific script now does): selecting among multiple candidate model
+specifications, and anything about where/how the result gets folded back into a caller's own
+results store (zip files, log tables, etc.) - `dump.path`, `mod.nam`, and the returned/saved `mod`
+object are the only points of contact with the rest of a pipeline.
+
+## Follow-up fix: `forceFinishNimble()`'s live-process check could silently miss a live run
+
+Found in review, in a separate Claude session from the one that wrote `forceFinishNimble()`.
+`liveNimbleWorkers()` passed `dump.path` straight into `pgrep -af <dump.path>`, but `pgrep -f`
+matches its pattern as an extended regex, not a literal substring. A `dump.path` containing `(`,
+`+`, `[`, or other regex metacharacters - all plausible, unexceptional directory names, e.g.
+`dump(v2)` or `dump+final` - could then fail to match a genuinely live process at all, silently
+defeating the commit-safety gate exactly when it matters most (no warning, no error - `commit =
+TRUE` would simply proceed as though the run were already finished). Confirmed by execution
+(pgrep itself is Linux-only and unavailable for direct testing here, but the same class of
+metacharacter mishandling was reproduced using R's own regex engine as a stand-in).
+
+Fixed by escaping `dump.path`'s regex metacharacters before it reaches `pgrep`, via a new internal
+`regex.escape()` helper. The live-process check now genuinely matches `dump.path` as a literal
+string, as the documentation already claimed it did.
+
+## Follow-up cleanup: `forceFinishNimble()`'s "Max Rhat"/"Min neff" message
+
+Found in a fresh review pass after the `pgrep` fix above. `forceFinishNimble()` re-filtered
+`checkNimble()`'s returned summary table (`chk$s`) by `par.ignore` before computing the "Max
+Rhat"/"Min neff" figures it prints - but `chk$s` already excludes `par.ignore`'d parameters, since
+`checkNimble()` drops them from the `mcmcOutput` itself (via `mcmcOutputSubset()`) before ever
+computing that summary. The second filter pass could never change anything; confirmed by tracing
+`checkNimble()`'s implementation and by the full test suite passing unchanged with it removed.
+Removed as dead code.
+
+While looking at that message, also brought it in line with `runNimble()`'s own equivalent status
+message: when `par.fuzzy.track` is non-empty, it now additionally reports the proportion of
+fuzzy-tracked parameters not converged (`checkNimble()` already computed this as
+`prp.fuzzy.not.converged`; it just wasn't being surfaced here). Neither change affects `result`,
+`summary`, or the saved model object - only the printed diagnostic message, and only when
+`quiet = FALSE`.
+
 # manageNimble 0.1.0
 
 First version number past the `0.0` development baseline, reflecting the

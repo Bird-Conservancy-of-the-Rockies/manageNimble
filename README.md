@@ -1,10 +1,14 @@
 # manageNimble
 
+## Acknowledgement
+Portions of this package - a full code review and bug-fix pass over the existing functions, and the addition of `forceFinishNimble()` - were written and/or reviewed with AI assistance from Claude (Anthropic), across multiple sessions. See `NEWS.md` for what changed and when, and the `\author{}` note in each function's own help page (`?functionName`) for which functions Claude touched specifically.
+
 ## Package contents
-```runNimble``` Primary (and only exported entry point besides the three below) function that allows parallel processing and automated convergence and sampling checks for Bayesian model fitting with Nimble. Supports an optional second monitor set (`parameters2`/`nt2`) for quantities too large to retain at the primary thinning rate - see `?runNimble`.<br>
+```runNimble``` Primary (and only exported entry point besides the four below) function that allows parallel processing and automated convergence and sampling checks for Bayesian model fitting with Nimble. Supports an optional second monitor set (`parameters2`/`nt2`) for quantities too large to retain at the primary thinning rate - see `?runNimble`.<br>
 ```runNimbleBlock``` Exported. Base function called by `runNimble`'s generated worker script to initiate or continue sampling and save posterior samples as a block.<br>
 ```checkNimble``` Exported. Base function called by `runNimble` used to summarize posterior parameter distributions, calculate Rhat and n_effective, and assess whether convergence and MCMC sampling targets have been met.<br>
 ```mcmcOutputSubset``` Exported. Utility function that subsets an mcmcOutput object. Used by `checkNimble` prior to summarizing MCMC samples when not all parameters sampled need to be summarized.<br>
+```forceFinishNimble``` Exported. Manually gathers and checks convergence for a `runNimble` dump.path (live or abandoned) under a caller-specified burn-in, without waiting out `runNimble`'s own `max.tries` loop - see `?forceFinishNimble`.<br>
 ```countNimbleBlocks``` Internal (not exported). Used by `runNimble` to count saved NIMBLE blocks and calculate sampling progress.<br>
 ```gatherNimble``` Internal (not exported). Used by `runNimble` to gather and organize NIMBLE sample blocks into an mcmcOutput object.<br>
 ```gatherNimble2``` Internal (not exported). Companion to `gatherNimble`; gathers the second monitor set, if any, into a plain matrix with chains stacked.

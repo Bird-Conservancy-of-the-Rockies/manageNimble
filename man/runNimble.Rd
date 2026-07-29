@@ -56,7 +56,11 @@
   \item{mcmc.info}{A vector with elemets: nchains = number of MCMC sampling chains, niterations = realized pre-thinning chain length including burnin, burnin = realized pre-thinning length of each chain discarded as burn-in, nthin = realized thinning expressed as the ith sample retained. Note that nthin can be a non-whole number if max.samples.saved is specified, in which case it is the mean interval between retained samples.}
   }
 \author{
-  Quresh S. Latif and Bryan L. Nuse, Bird Conservancy of the Rockies
+  Quresh S. Latif and Bryan L. Nuse, Bird Conservancy of the Rockies.
+
+  Substantially revised with Claude (Anthropic) assistance across multiple sessions, including
+  a full code review and bug-fix pass; see \code{NEWS.md} for what changed, including which
+  changes affect results for existing callers.
 }
 
 \keyword{nimble}

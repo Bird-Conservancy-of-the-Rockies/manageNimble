@@ -26,7 +26,11 @@
   A \code{[ndraw, nparam]} matrix with chains stacked, or \code{NULL} (with a warning) if no second monitor set is found or no blocks remain after burn-in.
 }
 \author{
-  Quresh S. Latif, Bird Conservancy of the Rockies
+  Quresh S. Latif, Bird Conservancy of the Rockies.
+
+  This function was originally written by Claude (Anthropic) in a prior session, and
+  subsequently revised further with Claude's assistance during a full code review and
+  in follow-up bug fixes; see \code{NEWS.md} for what changed.
 }
 \keyword{internal}
 \keyword{nimble}

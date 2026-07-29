@@ -30,7 +30,10 @@
   \item{s}{If spit.summary = TRUE, summary table of parameter estimates as provided by summary.mcmcOutput.}
 }
 \author{
-  Bryan L. Nuse and Quresh S. Latif, Bird Conservancy of the Rockies
+  Bryan L. Nuse and Quresh S. Latif, Bird Conservancy of the Rockies.
+
+  Substantially revised with Claude (Anthropic) assistance during a full code review; see
+  \code{NEWS.md} for what changed, including the fuzzy-tracking and NA-handling behaviour.
 }
 
 \keyword{nimble}
