@@ -39,12 +39,6 @@ if (!exists("countNimbleBlocks", mode = "function")) {
   gatherNimble2 <- manageNimble:::gatherNimble2
 }
 
-# Same rationale, for forceFinishNimble.R's own internal helpers.
-if (!exists("regex.escape", mode = "function")) {
-  regex.escape <- manageNimble:::regex.escape
-  liveNimbleWorkers <- manageNimble:::liveNimbleWorkers
-}
-
 # ---------------------------------------------------------------------------
 # Working-directory helper. checkNimble() writes diagnostic CSVs into getwd()
 # on its failure paths, so tests that trip those paths must not run in the
@@ -120,42 +114,6 @@ make_dump_dir <- function(blocks_per_chain, ni.block, nt = 1,
     }
   }
   d
-}
-
-# Real dumps of iid (or chain-shifted) draws for a single named parameter,
-# built directly from rnorm() rather than an encoded iteration index - unlike
-# make_dump_dir() above, these are meant to be fed through a real
-# gatherNimble() + checkNimble() pass and come out with a genuine, finite
-# Rhat/n.eff (make_dump_dir()'s iter/chain columns are deterministic ramps
-# and constants respectively, which is perfect for pinning down exactly which
-# iterations survive burn-in, but gives checkNimble() an undefined or Inf
-# Rhat on those columns - not useful for exercising the convergence-checking
-# path itself). "good": every chain drawn from the same N(0,1); should
-# converge. "bad": each chain's draws are shifted by a large chain-specific
-# constant, guaranteeing high between-chain variance and Rhat >> 1.1.
-make_dump_dir_iid <- function(blocks_per_chain, ni.block, nt = 1,
-                              kind = c("good", "bad"), par = "theta", seed = 1) {
-  kind <- match.arg(kind)
-  set.seed(seed)
-  d <- new_dir("dmp")
-  for (cn in seq_along(blocks_per_chain)) {
-    offset <- if (kind == "bad") cn * 100 else 0
-    for (b in blocks_per_chain[[cn]]) {
-      n <- ni.block / nt
-      samp <- matrix(rnorm(n) + offset, ncol = 1, dimnames = list(NULL, par))
-      save(samp, file = file.path(d, paste0("mod_chn", cn, "_", b, ".RData")))
-    }
-  }
-  d
-}
-
-# Writes the ni/nt member of NimbleObjects.RData that runNimble() itself
-# saves at the start of a run, and that forceFinishNimble() reads back to
-# interpret block files consistently. Only ni/nt are needed by
-# forceFinishNimble(); the other members runNimble() saves (model.path,
-# constants, data, ...) are irrelevant to it and omitted here.
-add_nimble_objects <- function(dump.path, ni, nt) {
-  save(ni, nt, file = file.path(dump.path, "NimbleObjects.RData"))
 }
 
 # ---------------------------------------------------------------------------

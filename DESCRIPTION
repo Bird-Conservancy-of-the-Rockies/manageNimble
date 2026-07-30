@@ -1,12 +1,12 @@
 Package: manageNimble
 Type: Package
 Title: Manage Nimble
-Version: 0.2.0
-Date: 2026-07-29
+Version: 0.1.0
+Date: 2025-03-31
 Author: Quresh S. Latif, Bryan L. Nuse, with AI-assisted contributions from
     Claude (Anthropic) across multiple sessions - a full code review and bug-fix
-    pass over the existing functions, and the addition of forceFinishNimble().
-    See NEWS.md and individual functions' documentation for specifics.
+    pass over the existing functions. See NEWS.md and individual functions'
+    documentation for specifics.
 Maintainer: Quresh Latif <quresh.latif@birdconservancy.org>
 Description: Package containing wrapper functions for Nimble to facilitate Bayesian model fitting. Features include parallel processing, automated or manual checking of convergence and sampling (i.e., Rhat, n_effective), and dumping saved posterior samples to disk to avoid overloading RAM.
 Imports: mcmcOutput, nimble, processx, dplyr, stringr, coda, R.utils

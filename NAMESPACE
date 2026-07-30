@@ -2,7 +2,6 @@ export(runNimble)
 export(checkNimble)
 export(mcmcOutputSubset)
 export(runNimbleBlock)
-export(forceFinishNimble)
 
 importFrom(coda, as.mcmc, as.mcmc.list)
 importFrom(dplyr, "%>%", as_tibble, bind_rows, filter, mutate, pull, slice)
