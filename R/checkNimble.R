@@ -91,6 +91,16 @@ checkNimble <- function(mcmcOutput, Rht.required = 1.1, neff.required = 100,
   }
 
   out <- list(result = result, prp.fuzzy.not.converged = prp.fuzzy.not.converged)
-  if(spit.summary) out$s <- s
+  if(spit.summary) {
+    # mcmcOutputSubset()'s par.keep/par.drop matching is intentionally
+    # unanchored (see its own tests/docs) - so a par.ignore'd parameter can be
+    # rescued back into `s` as a side effect of an unrelated par.keep entry
+    # (e.g. "sd.pnt_occupancy" rescued by "pnt_occupancy" appearing in
+    # par.fuzzy.track). Re-apply the same exact base-name drop already used for
+    # s.focal above, so par.ignore actually means "not shown", while
+    # par.dontign still rescues anything a caller explicitly wants kept.
+    drop.out <- which(par.base %in% par.ignore & !(par.base %in% par.dontign))
+    out$s <- if(length(drop.out) > 0) s %>% slice(-drop.out) else s
+  }
   return(out)
 }

@@ -180,6 +180,23 @@ test_that("FIXED (F2): par.dontign now rescues parameters par.ignore would other
   expect_false(with$result)                    # correctly fails now that they're checked
 })
 
+test_that("FIXED: par.ignore no longer leaks into $s via an unrelated par.fuzzy.track rescue", {
+  # Production case: "sd.pnt_occupancy" is in par.ignore, but "pnt_occupancy"
+  # (a different, legitimately fuzzy-tracked parameter) is in par.fuzzy.track
+  # and unanchored-matches "sd.pnt_occupancy[1]" as a substring, rescuing it
+  # into par.keep. s.focal already excluded it correctly (pass/fail was never
+  # affected); only the returned $s leaked it.
+  mo <- make_mcmcOutput(list(`pnt_occupancy[1]` = "good", `sd.pnt_occupancy[1]` = "good",
+                             alpha = "good"))
+
+  r <- checkNimble(mo, par.ignore = "sd.pnt_occupancy",
+                   par.fuzzy.track = "pnt_occupancy",
+                   fuzzy.threshold = 0.5, spit.summary = TRUE)
+
+  expect_false("sd.pnt_occupancy[1]" %in% r$s$Parameter)
+  expect_true("pnt_occupancy[1]" %in% r$s$Parameter)
+})
+
 test_that("FIXED (F16): a par.fuzzy.track family matching nothing gives a clear error", {
   # length(Rht.fuzzy) used to be able to reach 0, making prp.not.converged a
   # 0/0 NaN and the comparison against fuzzy.threshold raise "missing value
