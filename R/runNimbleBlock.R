@@ -30,7 +30,15 @@ runNimbleBlock <- function (mod.lst = NULL, comp.mcmc = NULL, n.iter = 1000,
     } else {
       nm.conf <- configureMCMC(nm, monitors = mod.lst[[5]], thin = n.thin)
     }
-    if(!is.na(SamplerSourcePath)) source(SamplerSourcePath)
+    # local = TRUE evaluates the sourced file in this call frame, where nm.conf
+    # actually lives. Without it, source()'s default (local = FALSE) evaluates in
+    # .GlobalEnv instead - a SamplerSourcePath file's nm.conf$removeSamplers()/
+    # addSampler() calls would then either fail with "object 'nm.conf' not found"
+    # (the normal case, since each worker is a fresh Rscript process with no
+    # global nm.conf) or, if a same-named global object happened to exist, would
+    # silently mutate that unrelated object while nm.conf here - the one actually
+    # passed to buildMCMC() below - stayed untouched.
+    if(!is.na(SamplerSourcePath)) source(SamplerSourcePath, local = TRUE)
     nm.mcmc <- buildMCMC(nm.conf)
     nm.C <- compileNimble(nm, dirName = tmp.path)
     comp.mcmc <- compileNimble(nm.mcmc, project = nm.C, dirName = tmp.path)

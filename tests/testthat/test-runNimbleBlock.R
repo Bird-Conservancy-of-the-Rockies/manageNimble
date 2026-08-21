@@ -118,3 +118,40 @@ test_that("runNimbleBlock() only sources SamplerSourcePath as a top-level argume
   )
   expect_true(get("MN_SAMPLER_SOURCED", envir = globalenv()))
 })
+
+test_that("FIXED: a SamplerSourcePath file's nm.conf$removeSamplers()/addSampler() calls actually reach the nm.conf used to build the MCMC", {
+  # source(SamplerSourcePath) used to default to local = FALSE, evaluating the
+  # sourced file in .GlobalEnv - but nm.conf is local to this function's own
+  # call frame. In the normal case (a fresh worker process with no pre-existing
+  # global nm.conf) that meant an immediate "object 'nm.conf' not found" error
+  # on every real (non-trivial) SamplerSourcePath file; the test above never
+  # caught this because its fixture never references nm.conf at all. This test
+  # uses a genuine sampler-swap file instead, and confirms both that it no
+  # longer errors and that the swap lands on the real nm.conf: the sourced file
+  # records nm.conf$getSamplers() (nimble's own sampler-config introspection)
+  # into a global side-channel immediately after the swap, which only shows
+  # "slice" for mu if the local nm.conf here was the one actually mutated - a
+  # stale/unrelated global object would leave it at the model's default
+  # ("conjugate_dnorm_dnorm_identity" for this toy model).
+  m <- toy()
+  sf <- file.path(new_tmp(), "sampler.R")
+  writeLines(c(
+    "nm.conf$removeSamplers('mu')",
+    "nm.conf$addSampler(target = 'mu', type = 'slice')",
+    "assign('MN_SAMPLER_NAMES', sapply(nm.conf$getSamplers(), function(s) s$name), envir = globalenv())"
+  ), sf)
+
+  assign("MN_SAMPLER_NAMES", NULL, envir = globalenv())
+  on.exit(suppressWarnings(rm("MN_SAMPLER_NAMES", envir = globalenv())), add = TRUE)
+
+  expect_no_error(suppressMessages(
+    runNimbleBlock(mod.lst = list(m$code, m$cons, m$dat, m$ini, m$pars),
+                   SamplerSourcePath = sf,
+                   n.iter = 50, n.thin = 1, tmp.path = new_tmp(),
+                   dump.file.path = file.path(new_tmp(), "b.RData"))
+  ))
+
+  samplers <- get("MN_SAMPLER_NAMES", envir = globalenv())
+  names(samplers) <- NULL
+  expect_setequal(samplers, c("RW", "slice"))   # sigma unchanged, mu swapped from conjugate to slice
+})

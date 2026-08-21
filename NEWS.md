@@ -53,6 +53,49 @@ reachable through any normal call path. `gatherNimble()`'s own
 but is already caught by a loud, clear `stop()` rather than failing silently -
 a distinct, lower-severity issue, left untouched.
 
+## `SamplerSourcePath` was still broken after F1 - a second, independent bug in the same feature
+
+F1 (below) fixed `SamplerSourcePath` being silently ignored because it was buried
+inside `list(...)` instead of passed as a real argument to `runNimbleBlock()`.
+That fix was correct as far as it went, but a second, unrelated bug in the same
+feature meant `SamplerSourcePath` was still completely unusable in production
+even after F1 landed: `runNimbleBlock()` called `source(SamplerSourcePath)` with
+no `local =` argument, which defaults to `local = FALSE` - evaluating the
+sourced file in `.GlobalEnv`, not in `runNimbleBlock()`'s own call frame, where
+the MCMC configuration object (`nm.conf`) that the file is meant to modify
+actually lives. In the normal case - every worker is a brand-new `Rscript`
+process with no pre-existing global `nm.conf` - a real `SamplerSourcePath` file
+(one that actually calls `nm.conf$removeSamplers()`/`nm.conf$addSampler()`, as
+the documentation instructs) crashed immediately with
+`object 'nm.conf' not found`. Confirmed by execution, both with a minimal
+standalone reproduction of the scoping mechanics and by running
+`runNimbleBlock()` end to end against a real compiled NIMBLE model with a
+genuine sampler-swap file.
+
+The only existing test exercising `SamplerSourcePath` against a real compile
+(`test-runNimbleBlock.R`) predates this finding and was written to guard F1
+specifically: its fixture file never references `nm.conf` at all (it does
+`assign('MN_SAMPLER_SOURCED', TRUE, envir = globalenv())`, which succeeds
+regardless of what environment `source()` evaluates it in), so it could
+confirm the file was sourced but not that a real sampler-modification command
+inside it actually reached the right object. That gap is why this survived the
+original review pass untouched.
+
+Fixed with `source(SamplerSourcePath, local = TRUE)`, so the file evaluates in
+the same frame as the `nm.conf` it's meant to modify. New regression test adds
+a fixture that performs a genuine sampler swap
+(`nm.conf$removeSamplers('mu')` / `nm.conf$addSampler(target = 'mu', type =
+'slice')`) and records `nm.conf$getSamplers()` immediately afterward via the
+same global side-channel pattern as the existing F1 test - confirmed via
+revert-and-retest to fail with the exact `object 'nm.conf' not found` error
+against the unfixed code, and to correctly report the swapped sampler
+(`"slice"` for `mu`, not the model's default `"conjugate_..."`) against the fix.
+
+**Any analysis that supplied `SamplerSourcePath` could never have completed a
+run before this fix** - every chain would have failed at the first block with
+this error, logged to `chn<n>_error.log`. Nothing to be "not comparable" here;
+prior use simply could not have succeeded.
+
 # manageNimble 0.0
 
 This release implements every finding from a full code review of `R/` (34
