@@ -1,3 +1,60 @@
+# manageNimble 0.2.0
+
+## New argument: `runNimble(..., consolidate.monitors2 = TRUE)`
+
+`parameters2`'s second monitor set has always been written to its own file
+(`paste0(mod.nam, "_monitors2.rds")`), separate from the primary model object
+saved via `R.utils::saveObject(mod, mod.nam)` - so using it meant tracking and
+loading two separate files per model. When `consolidate.monitors2 = TRUE` (the
+new default), the gathered second monitor set is now *also* attached to the
+saved/returned object as `mod$monitors2`, so a single
+`R.utils::loadObject(mod.nam)` call (or `rtrn.model = TRUE`) gives access to
+both. The standalone `_monitors2.rds` file is still written unconditionally
+either way - nothing that already reads it directly is affected. Set
+`consolidate.monitors2 = FALSE` to reproduce the exact prior behaviour (`mod`
+never gets a `monitors2` element). Has no effect, regardless of setting, when
+`parameters2` is empty - `mod` never gets a `monitors2` element in that case.
+
+**Tradeoff**: with the new default, loading the primary object now also loads
+the second monitor set. Since `parameters2` exists specifically for quantities
+too large to retain at the primary thinning rate, this can measurably increase
+load time/memory for the primary object - callers who want the second set kept
+separate (smaller/faster primary-object loads) should pass
+`consolidate.monitors2 = FALSE`.
+
+Implementation: `gatherNimble2()` already returned the gathered draws directly
+(`return(out)`, or `NULL` with a `warning()` on either of its two early-exit
+paths) - no change needed there. `runNimble()` now captures that return value
+at both of its `gatherNimble2()` call sites (the automated-convergence-checks
+branch and the manual/`else` branch) and, when `consolidate.monitors2` and the
+result are both non-`NULL`, attaches it to `mod$monitors2` and re-saves/re-
+assigns `mod` (respecting the existing `sav.model`/`rtrn.model` flags) - `mod`
+is already guaranteed to be finalized in scope at that point in both branches,
+so no restructuring of either branch's convergence-check logic was needed.
+
+Checked this package's own code and two downstream repos
+(`NFWF_RMR`, `IMBCR-annual-analysis-scripts`) for anything that assumes a fixed
+set of elements in the saved `mod` list (e.g. iterating over `names(mod)`) -
+found nothing that would break. Notably, `NFWF_RMR/Fit_species_model.R`'s own
+non-parallel fitting branch already manually attaches `mod$monitors2` under
+this exact field name, with a code comment explicitly anticipating this feature
+("the same field name production's `runNimble()` path is expected to use
+once/if manageNimble is updated to do the same") - so this default actually
+*closes* a known, previously-flagged inconsistency between that repo's two
+fitting branches, rather than introducing a new one.
+
+New tests in `test-runNimble-monitors2.R`: since `runNimble()` itself can't run
+on Windows (GNU `parallel`/`processx` are Linux-only - see `?runNimble`), these
+exercise the real `gatherNimble2()` against real block dumps written by the
+real `runNimbleBlock()` (both Windows-testable, same rationale as
+`test-runNimbleBlock.R`), plus the attach/save logic reproduced identically to
+both call sites in `R/runNimble.R`. Confirms: `consolidate.monitors2 = TRUE`
+(default) makes `R.utils::loadObject(mod.nam)$monitors2` identical to the
+standalone file's contents; `consolidate.monitors2 = FALSE` leaves `mod` with
+no `monitors2` element while the standalone file is still written; and an
+empty `parameters2` never adds a `monitors2` element regardless of
+`consolidate.monitors2`.
+
 # manageNimble 0.1.0
 
 First version number past the `0.0` development baseline, reflecting the

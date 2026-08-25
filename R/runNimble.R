@@ -7,11 +7,12 @@ runNimble <-
            Rht.required = 1.1, neff.required = 100,
            max.tries = 10, dump.path = "dump",
            SamplerSourcePath = NA, delete.blocks = TRUE,
-           parameters2 = character(), nt2 = NULL) {
+           parameters2 = character(), nt2 = NULL,
+           consolidate.monitors2 = TRUE) {
   # parameters2 / nt2: optional second set of monitored parameters saved at its
   # own thinning rate, for quantities too large to retain at nt - latent state
   # arrays, for example. They take no part in convergence checking; they are
-  # gathered once at the end of the run and written to
+  # gathered once at the end of the run and always written to
   # paste0(mod.nam, "_monitors2.rds") as a plain [ndraw, nparam] matrix with
   # chains stacked.
   #
@@ -19,6 +20,19 @@ runNimble <-
   # the block architecture: each block dump stays small, and draws accumulate to
   # roughly nblks * nc. Set it smaller for more draws at proportionally more
   # disk. Defaults to no second set, in which case nothing changes.
+  #
+  # consolidate.monitors2: when TRUE (default) and parameters2 is non-empty, the
+  # gathered second monitor set is also attached to the saved/returned model
+  # object as mod$monitors2, so a single R.utils::loadObject(mod.nam) call (or
+  # rtrn.model = TRUE) gives access to both monitor sets together - the
+  # standalone _monitors2.rds file is still written either way. The tradeoff is
+  # memory/load time: loading the primary object now also loads the second
+  # monitor set, which can be large (that's the reason parameters2 exists as a
+  # separate set in the first place). Set to FALSE to keep today's behaviour -
+  # mod gets no monitors2 element, the second set is only ever available via
+  # its own file - e.g. for callers who deliberately want it kept out of the
+  # primary object for memory/load-time reasons. Has no effect when
+  # parameters2 is empty; mod never gets a monitors2 element in that case.
     if(length(parameters2) > 0 && is.null(nt2)) nt2 <- ni
     if(length(parameters2) == 0) nt2 <- 1
     if(!rtrn.model & !sav.model) stop("There is no way for runNimble to save output. Set either rtrn.model = TRUE or sav.model = TRUE.")
@@ -345,8 +359,13 @@ runNimble <-
       # removed. Done once at the end rather than at every convergence check:
       # these parameters take no part in convergence and are typically large.
       if(length(parameters2) > 0) {
-        gatherNimble2(read.path = dump.path, burnin = nb, ni.block = ni, nt2 = nt2,
-                      save.path = paste0(mod.nam, "_monitors2.rds"))
+        monitors2.out <- gatherNimble2(read.path = dump.path, burnin = nb, ni.block = ni, nt2 = nt2,
+                                       save.path = paste0(mod.nam, "_monitors2.rds"))
+        if(consolidate.monitors2 && !is.null(monitors2.out)) {
+          mod$monitors2 <- monitors2.out
+          if(sav.model) R.utils::saveObject(mod, mod.nam)
+          if(rtrn.model) assign(mod.nam, mod, envir = .GlobalEnv)
+        }
       }
       copy_logs()
       if(delete.blocks) unlink(dump.path, recursive = TRUE)
@@ -411,8 +430,13 @@ runNimble <-
       # removed. Done once at the end rather than at every convergence check:
       # these parameters take no part in convergence and are typically large.
       if(length(parameters2) > 0) {
-        gatherNimble2(read.path = dump.path, burnin = nb, ni.block = ni, nt2 = nt2,
-                      save.path = paste0(mod.nam, "_monitors2.rds"))
+        monitors2.out <- gatherNimble2(read.path = dump.path, burnin = nb, ni.block = ni, nt2 = nt2,
+                                       save.path = paste0(mod.nam, "_monitors2.rds"))
+        if(consolidate.monitors2 && !is.null(monitors2.out)) {
+          mod$monitors2 <- monitors2.out
+          if(sav.model) R.utils::saveObject(mod, mod.nam)
+          if(rtrn.model) assign(mod.nam, mod, envir = .GlobalEnv)
+        }
       }
       copy_logs()
       if(delete.blocks) unlink(dump.path, recursive = TRUE)

@@ -1,8 +1,8 @@
 Package: manageNimble
 Type: Package
 Title: Manage Nimble
-Version: 0.1.0
-Date: 2025-03-31
+Version: 0.2.0
+Date: 2026-08-24
 Author: Quresh S. Latif, Bryan L. Nuse, with AI-assisted contributions from
     Claude (Anthropic) across multiple sessions - a full code review and bug-fix
     pass over the existing functions. See NEWS.md and individual functions'
