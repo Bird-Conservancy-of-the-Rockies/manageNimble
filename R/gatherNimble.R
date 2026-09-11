@@ -69,6 +69,33 @@ gatherNimble <- function(read.path, burnin, ni.block, base.thin, max.samples.sav
     additional.thin.rate <- 1
   }
 
+  # ind.sav is a set of LOCAL, 1-based post-burnin draw indices (r = 1 is the
+  # first retained draw of any chain), shared identically across every chain -
+  # chains are already trimmed to the same block count above, so this doesn't
+  # vary by chain. Converting it to ABSOLUTE NIMBLE iteration numbers gives an
+  # explicit, verifiable key for exactly which draws survived (burn-in trim and
+  # any max.samples.saved-driven subsample together) - needed so gatherNimble2()
+  # can derive the second monitor set's kept rows from this same selection,
+  # rather than sampling independently (see gatherNimble2()'s own comments).
+  #
+  # Local row r's absolute iteration: burnin.realized accounts for whole
+  # dropped blocks; (burnin.needed + r) is r's position counting from the start
+  # of the first retained block (burnin.needed local rows before r=1 were
+  # trimmed there); multiplying by base.thin converts that draw count back to
+  # an iteration number, since each successive retained draw advances the
+  # iteration index by base.thin. Cross-checked by execution against every
+  # existing test in test-gatherNimble.R, including the fractional-burnin.needed
+  # cases and a max.samples.saved cap together, using the fixture's own
+  # true-iteration data column as ground truth.
+  retained.iters <- burnin.realized + (burnin.needed + ind.sav) * base.thin
+
+  # Per-row (chn, iter) key aligned with as.matrix(out)'s row order: chain-major
+  # (chns in order), and within each chain, ascending iteration order - the same
+  # order the block-loading loop below produces, since ind.sav is sorted
+  # ascending and blocks/rows are processed in ascending order throughout.
+  iter.key <- data.frame(chn = rep(chns, each = length(retained.iters)),
+                         iter = rep(retained.iters, times = length(chns)))
+
   # Load one block at a time and immediately keep only the rows this chain
   # actually needs (the residual burn-in trim on the first retained block, and
   # the systematic subsample selected above), discarding the rest before the
@@ -102,5 +129,5 @@ gatherNimble <- function(read.path, burnin, ni.block, base.thin, max.samples.sav
   gc(verbose = FALSE)
 
   out <- mcmcOutput(as.mcmc.list(gathr))
-  return(mget(c("out", "nblks", "additional.thin.rate")))
+  return(mget(c("out", "nblks", "additional.thin.rate", "retained.iters", "iter.key")))
 }

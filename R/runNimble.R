@@ -13,13 +13,20 @@ runNimble <-
   # own thinning rate, for quantities too large to retain at nt - latent state
   # arrays, for example. They take no part in convergence checking; they are
   # gathered once at the end of the run and always written to
-  # paste0(mod.nam, "_monitors2.rds") as a plain [ndraw, nparam] matrix with
-  # chains stacked.
+  # paste0(mod.nam, "_monitors2.rds") as list(out = <[ndraw, nparam] matrix with
+  # chains stacked>, iter.key = <data.frame(chn, iter) aligned with out's rows>).
   #
   # nt2 defaults to ni, i.e. one retained draw per block per chain. That suits
   # the block architecture: each block dump stays small, and draws accumulate to
   # roughly nblks * nc. Set it smaller for more draws at proportionally more
-  # disk. Defaults to no second set, in which case nothing changes.
+  # disk. Must be a positive integer multiple of nt (validated below): the
+  # second set's kept draws are derived directly from the primary set's own
+  # retained iterations (see gatherNimble()/gatherNimble2()), which guarantees
+  # both that the ratio of retained second-set rows to primary-set rows is
+  # always nt2/nt regardless of how many retry blocks a chain needed, and that
+  # every retained second-set row traces back to the specific primary-set row
+  # from the same iteration (join iter.key from both sets on c("chn", "iter")).
+  # Defaults to no second set, in which case nothing changes.
   #
   # consolidate.monitors2: when TRUE (default) and parameters2 is non-empty, the
   # gathered second monitor set is also attached to the saved/returned model
@@ -41,6 +48,13 @@ runNimble <-
            paste(intersect(parameters2, parameters), collapse = ", "),
            ". The second monitor set is for quantities too large to retain at ",
            "thinning rate nt; monitoring them in both sets defeats that purpose.")
+    # gatherNimble2() derives the second monitor set's kept rows directly from
+    # gatherNimble()'s own retained-iteration selection (see both functions'
+    # comments), which only gives an exact result when every nt2-spaced
+    # iteration is guaranteed to also be an nt-spaced iteration.
+    if(length(parameters2) > 0 && (nt2 <= 0 || nt2 %% 1 != 0 || nt2 %% nt != 0))
+      stop("nt2 (", nt2, ") must be a positive integer multiple of nt (", nt,
+           ") when parameters2 is non-empty.")
     if(nb < 1 & ((ni - (ni * nb)) / nt) <= 100) stop("Increase iterations (ni), reduce burn-in, or reduce thinning. Too few samples for calculating Rhat.")
     if(nb >= 1 & ((ni - nb) / nt) <= 100) stop("Increase iterations (ni), reduce burn-in, or reduce thinning. Too few samples for calculating Rhat.")
     automate.convergence.checks <- !is.null(check.freq)
@@ -360,6 +374,7 @@ runNimble <-
       # these parameters take no part in convergence and are typically large.
       if(length(parameters2) > 0) {
         monitors2.out <- gatherNimble2(read.path = dump.path, burnin = nb, ni.block = ni, nt2 = nt2,
+                                       base.thin = nt, retained.iters = mod.out$retained.iters,
                                        save.path = paste0(mod.nam, "_monitors2.rds"))
         if(consolidate.monitors2 && !is.null(monitors2.out)) {
           mod$monitors2 <- monitors2.out
@@ -431,6 +446,7 @@ runNimble <-
       # these parameters take no part in convergence and are typically large.
       if(length(parameters2) > 0) {
         monitors2.out <- gatherNimble2(read.path = dump.path, burnin = nb, ni.block = ni, nt2 = nt2,
+                                       base.thin = nt, retained.iters = mod.out$retained.iters,
                                        save.path = paste0(mod.nam, "_monitors2.rds"))
         if(consolidate.monitors2 && !is.null(monitors2.out)) {
           mod$monitors2 <- monitors2.out
