@@ -1,8 +1,8 @@
 # runNimble() itself can't run on Windows (GNU parallel / processx's Linux-only
 # process launch - see ?runNimble). These tests instead exercise, directly, the
 # exact pieces runNimble() combines to implement consolidate.monitors2: the real
-# (unmodified) gatherNimble2() against real block dumps written by the real
-# runNimbleBlock() - both of which are Windows-testable, same rationale as
+# (unmodified) gatherNimble()/gatherNimble2() pair against real block dumps
+# written by the real runNimbleBlock() - all Windows-testable, same rationale as
 # test-runNimbleBlock.R - plus the attach-to-mod/save logic, reproduced here
 # identically to both call sites in R/runNimble.R (search that file for
 # "consolidate.monitors2" to compare). If that logic is ever refactored into its
@@ -71,7 +71,12 @@ test_that("consolidate.monitors2 = TRUE (the default) attaches mod$monitors2, id
   mod.nam <- "modA"
   mod <- fake_mod()
 
+  # mirrors runNimble()'s own two-step call: gatherNimble() first, its
+  # retained.iters threaded into gatherNimble2().
+  mod.out <- gatherNimble(read.path = dump.path, burnin = 0, ni.block = 200,
+                          base.thin = 2, max.samples.saved = NULL)
   monitors2.out <- gatherNimble2(read.path = dump.path, burnin = 0, ni.block = 200, nt2 = 50,
+                                 base.thin = 2, retained.iters = mod.out$retained.iters,
                                  save.path = paste0(mod.nam, "_monitors2.rds"))
   consolidate.monitors2 <- TRUE   # mirrors runNimble()'s default
   sav.model <- TRUE
@@ -84,7 +89,8 @@ test_that("consolidate.monitors2 = TRUE (the default) attaches mod$monitors2, id
   loaded <- R.utils::loadObject(mod.nam)
   expect_true("monitors2" %in% names(loaded))
   expect_equal(loaded$monitors2, readRDS(paste0(mod.nam, "_monitors2.rds")))
-  expect_equal(dim(loaded$monitors2), c(8L, 8L))   # 2 blocks x 4 draws/block (200/50), z[1:8]
+  expect_equal(dim(loaded$monitors2$out), c(8L, 8L))   # 2 blocks x 4 draws/block (200/50), z[1:8]
+  expect_equal(nrow(loaded$monitors2$iter.key), 8L)
 })
 
 test_that("consolidate.monitors2 = FALSE reproduces the old behaviour: no mod$monitors2, standalone file still written", {
@@ -95,7 +101,10 @@ test_that("consolidate.monitors2 = FALSE reproduces the old behaviour: no mod$mo
   sav.model <- TRUE
   if (sav.model) R.utils::saveObject(mod, mod.nam)   # runNimble() already saved mod earlier regardless
 
+  mod.out <- gatherNimble(read.path = dump.path, burnin = 0, ni.block = 200,
+                          base.thin = 2, max.samples.saved = NULL)
   monitors2.out <- gatherNimble2(read.path = dump.path, burnin = 0, ni.block = 200, nt2 = 50,
+                                 base.thin = 2, retained.iters = mod.out$retained.iters,
                                  save.path = paste0(mod.nam, "_monitors2.rds"))
   consolidate.monitors2 <- FALSE
   if (consolidate.monitors2 && !is.null(monitors2.out)) {

@@ -24,6 +24,8 @@
   \item{out}{MCMC samples organized as an 'mcmcOutput' object.}
   \item{nblks}{the number of sampling blocks}
   \item{additional.thin.rate}{Any additional thinning rate if max.samples.saved is specified. Set to 1 if max.samples.saved is NULL.}
+  \item{retained.iters}{Sorted vector of the absolute NIMBLE iteration numbers actually retained (after burn-in and any \code{max.samples.saved}-driven subsample), identical across chains. Threaded into \code{\link{gatherNimble2}} so the second monitor set's kept rows can be derived directly from this same selection rather than sampled independently.}
+  \item{iter.key}{A \code{data.frame(chn, iter)} with one row per retained draw, aligned with \code{as.matrix(out)}'s row order (chain-major, ascending iteration within chain) - an explicit, joinable key for which chain and absolute iteration each row came from.}
 }
 
 \author{

@@ -1,3 +1,122 @@
+# manageNimble 0.3.0
+
+## Fixed: the two monitor sets (`parameters`/`parameters2`) could silently fall out of correspondence - **CHANGES RESULTS**
+
+Root-caused by reading `gatherNimble.R`, `gatherNimble2.R`, and `runNimble.R`
+together, not any one of them in isolation.
+
+`gatherNimble()` (the primary set) computes `chain.length.now` (the total
+`nt`-thinned rows accumulated so far) and, whenever it exceeds
+`max.samples.saved`, applies a second, data-dependent systematic subsample on
+top (`ind.sav <- unique(round(seq(1, chain.length.now, length.out =
+max.samples.saved)))`), reporting the realized rate as `additional.thin.rate`.
+This only engages, and only grows, when a chain needed enough retry blocks to
+exceed `max.samples.saved` - not a rare case for a run that takes several
+convergence-check cycles.
+
+`gatherNimble2()` (the second set, `parameters2`/`monitors2`) had no equivalent
+cap: it concatenated every surviving block's `samp2` at the fixed rate `nt2`,
+unconditionally. `runNimble()` never actually passed it the `max.rows` argument
+it already accepted, so this cap was dead code even for a caller who might have
+assumed it applied automatically. Net effect: for a run needing few blocks, the
+`nt2 : nt` ratio of retained rows held cleanly by construction. For one needing
+many retry blocks, the primary set got compressed to a fixed per-chain ceiling
+while the second set kept growing unbounded - in one real run this produced
+**more** retained rows in the second set than in the primary set, the opposite
+of what `nt2 > nt` is supposed to guarantee.
+
+A deeper, related issue: neither function retained each row's absolute
+`(chain, iteration)` origin. `samp`/`samp2` are bare matrices read straight off
+`mvSamples`/`mvSamples2`; `ind.sav`/`additional.thin.rate` were computed and
+used inside `gatherNimble()` but never returned or attached to the saved model
+object. So even on a run where the ratio happened to come out clean, there was
+no structural way to verify or reconstruct which second-set row paired with
+which primary-set row - any downstream pairing was a positional guess, not a
+real join. (Position-based pairing is exactly what the downstream `NFWF_RMR`
+repo currently does against these two sets; it will need updating to use the
+new `iter.key` join described below, but that update is out of scope here and
+happens separately.)
+
+**Fix.** Every block runs exactly `ni.block` iterations at a fixed thinning
+rate, and `countNimbleBlocks()` already enforces gap-free, contiguously-
+numbered blocks per chain - so the absolute NIMBLE iteration behind any
+retained row is fully computable from existing bookkeeping alone.
+`runNimbleBlock()`'s own sampling loop did not need to change.
+
+- `gatherNimble()` now also returns `retained.iters` (the sorted, absolute
+  NIMBLE iteration numbers it actually retained for the primary set - after
+  burn-in and any `max.samples.saved`-driven subsample - identical across
+  chains) and `iter.key` (a `data.frame(chn, iter)`, one row per retained
+  draw, aligned with `as.matrix(out)`'s row order). Verified by execution
+  against every scenario in `test-gatherNimble.R`, including the fractional-
+  `burnin.needed` cases and a `max.samples.saved` cap together, using the test
+  fixture's own independently-encoded true-iteration data as ground truth -
+  not just derived algebra.
+- `gatherNimble2()` no longer gathers/thins independently. It now keeps a
+  second-set row if and only if its absolute iteration is a member of
+  `retained.iters` (a new required argument, threaded from `gatherNimble()`'s
+  own return value). Because `nt2` must now be a positive integer multiple of
+  the primary rate `nt` (validated - see below), every `nt2`-spaced iteration
+  is guaranteed to also be an `nt`-spaced iteration, so this intersection is
+  exact, not a resampling. This guarantees both required properties at once:
+  the ratio of retained second-set rows to primary-set rows is always
+  `nt2 / nt`, regardless of how many retry blocks a chain needed; and every
+  retained second-set row has an explicit, verifiable `(chn, iter)` join key
+  back to the specific primary-set row from the same iteration.
+- The now-redundant `max.rows` argument to `gatherNimble2()` is removed - the
+  cap is inherited automatically from whatever `max.samples.saved` selection
+  `gatherNimble()` already applied; there is no longer an independent "cap the
+  second set to N rows" operation to perform.
+- `runNimble()` validates, up front (before any worker is launched, and
+  before `model.path`/`data`/etc. are ever touched), that `nt2` is a positive
+  integer multiple of `nt` whenever `parameters2` is non-empty - required for
+  the guarantee above to hold, and much better caught immediately than partway
+  through a multi-day run. Both `gatherNimble2()` call sites in `runNimble()`
+  (the automated-convergence-check branch and the manual branch) now pass
+  `base.thin = nt` and `retained.iters = mod.out$retained.iters`, threading the
+  primary set's actual selection through to the second.
+- `gatherNimble2()`'s return value is now `list(out, iter.key)` instead of a
+  bare matrix (`out` is the same `[ndraw, nparam]` matrix as before; `iter.key`
+  is the new join key, row-aligned with `out`). This flows through to
+  `mod$monitors2` (when `consolidate.monitors2 = TRUE`) and to the standalone
+  `paste0(mod.nam, "_monitors2.rds")` file, which now stores this same list.
+  The "chains contributed unequal numbers of draws" warning is retained with
+  its original meaning (a block dump missing its second monitor set) - under
+  the new design every chain draws from the identical `retained.iters` target
+  set, so it now only fires for a genuinely incomplete dump, not from a
+  block-count mismatch across chains (`countNimbleBlocks()` already ruled that
+  out for both functions).
+
+**This changes `gatherNimble2()`'s/`monitors2`'s row count for any run that
+needed `max.samples.saved`-driven additional thinning on the primary set** -
+deliberately: the old row count was the bug. A run where
+`additional.thin.rate == 1` (no additional thinning was ever needed) is
+unaffected in row count, and gains only the new `iter.key`.
+
+**This is a breaking change for any already-saved model object fit under the
+old `gatherNimble2()` behaviour.** Existing `mod$monitors2` values or
+`_monitors2.rds` files from before this fix cannot be retroactively repaired -
+there is no way to reconstruct which of their rows would have corresponded to
+which primary-set row after the fact. Any analysis relying on a trustworthy
+`parameters`/`parameters2` correspondence, from a run fit before this version,
+should be re-fit under the corrected package.
+
+New tests: `test-gatherNimble.R` gained direct coverage of `retained.iters`/
+`iter.key`, cross-checked against the fixture's own encoded true-iteration
+data, both uncapped and under a `max.samples.saved` cap. `test-gatherNimble2.R`
+was substantially rewritten for the new signature/return shape and gained a
+dedicated `nc == 1` case, an `nt2`-not-a-multiple-of-`nt` error case, and a
+`PROPERTY` test reproducing the exact scenario the bug required (many retry
+blocks pushing `chain.length.now` past `max.samples.saved`, so
+`additional.thin.rate > 1`) and asserting both required properties hold there:
+an exact (not approximate) row-count ratio, and a real join
+(`merge(..., by = c("chn", "iter"))`) with no orphaned second-set rows. New
+`test-runNimble-nt2-validation.R` exercises the `runNimble()`-level validation
+via genuine (not mirrored) calls, relying on the check firing before any other
+required argument is forced - confirmed by execution that an invalid `nt2`
+fails with this specific message while a valid one proceeds to a different,
+later error.
+
 # manageNimble 0.2.0
 
 ## New argument: `runNimble(..., consolidate.monitors2 = TRUE)`

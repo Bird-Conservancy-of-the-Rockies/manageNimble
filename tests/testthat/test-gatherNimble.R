@@ -23,6 +23,38 @@ test_that("happy path: correct iterations retained, chains aligned", {
   expect_equal(sort(unique(it[ch == 1])), sort(unique(it[ch == 2])))
 })
 
+test_that("retained.iters / iter.key agree with the fixture's own encoded true iteration values", {
+  # retained.iters/iter.key are gatherNimble()'s new structural correspondence
+  # key (used to thread gatherNimble2()'s selection off of this one - see
+  # test-gatherNimble2.R). Cross-checked here against the fixture's own
+  # independently-encoded "iter" data column, not derived from the same code.
+  d <- make_dump_dir(list(1:4, 1:4), ni.block = 100)
+
+  g <- gatherNimble(d, burnin = 0.5, ni.block = 100, base.thin = 1,
+                    max.samples.saved = NULL)
+
+  expect_equal(sort(g$retained.iters), 201:400)
+  expect_equal(nrow(g$iter.key), nrow(g$out))
+  expect_setequal(unique(g$iter.key$chn), 1:2)
+  # iter.key is row-aligned with as.matrix(out) (chain-major, ascending
+  # iteration within chain) - every row's fixture-encoded true iteration must
+  # match iter.key's own claim for that same row.
+  expect_equal(g$iter.key$iter, unname(g$out[, "iter"]))
+  expect_equal(g$iter.key$chn, unname(g$out[, "chain"]))
+})
+
+test_that("retained.iters / iter.key stay correct when max.samples.saved forces a systematic subsample", {
+  d <- make_dump_dir(list(1:4, 1:4), ni.block = 100)
+
+  g <- gatherNimble(d, burnin = 0.5, ni.block = 100, base.thin = 1,
+                    max.samples.saved = 50)
+
+  expect_equal(g$additional.thin.rate, 4)
+  expect_equal(sort(unique(g$retained.iters)), sort(unique(g$out[, "iter"])))
+  expect_equal(g$iter.key$iter, unname(g$out[, "iter"]))
+  expect_equal(g$iter.key$chn, unname(g$out[, "chain"]))
+})
+
 test_that("residual burn-in inside a block is applied on top of whole-block dropping", {
   # 5 blocks of 100, nb = 0.5 -> burnin 250. Whole blocks only reach 200, so
   # 50 further draws must be dropped from the front.
