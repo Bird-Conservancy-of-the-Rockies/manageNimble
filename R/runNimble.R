@@ -323,7 +323,8 @@ runNimble <-
           mcmc.info <- c(nchains = nc, niterations = ni.now,
                          burnin = nb.now, nthin = nt.now)
           sumTab <- mod.check$s
-          mod <- list(mcmcOutput = mod.out$out, summary = sumTab, mcmc.info = mcmc.info)
+          mod <- list(mcmcOutput = mod.out$out, iter.key = mod.out$iter.key,
+                     summary = sumTab, mcmc.info = mcmc.info)
           if(sav.model) R.utils::saveObject(mod, mod.nam)
           if(rtrn.model) assign(mod.nam, mod, envir = .GlobalEnv)
           if(length(par.fuzzy.track) == 0) {
@@ -357,8 +358,9 @@ runNimble <-
       if(!mod.check.result) {
         warn.message <- paste0("Rhat did not decrease after ", nchecks,
                                " checks. Model abandoned before reaching convergence targets.")
-        mod <- list(mcmcOutput = mod.out$out, summary = sumTab, mcmc.info = mcmc.info,
-                    warning = warn.message)
+        mod <- list(mcmcOutput = mod.out$out, iter.key = mod.out$iter.key,
+                   summary = sumTab, mcmc.info = mcmc.info,
+                   warning = warn.message)
         if(sav.model) R.utils::saveObject(mod, mod.nam)
         if(rtrn.model) assign(mod.nam, mod, envir = .GlobalEnv)
       }
@@ -426,7 +428,8 @@ runNimble <-
           } else {
             sumTab <- summary(mod.out$out, MCEpc = F, Rhat = T, n.eff = T, f = T, overlap0 = T, verbose = FALSE)
           }
-          mod <- list(mcmcOutput = mod.out$out, summary = sumTab, mcmc.info = mcmc.info)
+          mod <- list(mcmcOutput = mod.out$out, iter.key = mod.out$iter.key,
+                     summary = sumTab, mcmc.info = mcmc.info)
           if(sav.model) R.utils::saveObject(mod, mod.nam)
           if(rtrn.model) assign(mod.nam, mod, envir = .GlobalEnv)
           run.complete <- TRUE

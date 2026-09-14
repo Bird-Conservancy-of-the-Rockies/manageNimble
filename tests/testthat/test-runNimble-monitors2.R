@@ -1,12 +1,13 @@
 # runNimble() itself can't run on Windows (GNU parallel / processx's Linux-only
 # process launch - see ?runNimble). These tests instead exercise, directly, the
-# exact pieces runNimble() combines to implement consolidate.monitors2: the real
-# (unmodified) gatherNimble()/gatherNimble2() pair against real block dumps
-# written by the real runNimbleBlock() - all Windows-testable, same rationale as
-# test-runNimbleBlock.R - plus the attach-to-mod/save logic, reproduced here
-# identically to both call sites in R/runNimble.R (search that file for
-# "consolidate.monitors2" to compare). If that logic is ever refactored into its
-# own function, these tests should call it directly instead of mirroring it.
+# exact pieces runNimble() combines to implement consolidate.monitors2 and
+# mod$iter.key: the real (unmodified) gatherNimble()/gatherNimble2() pair
+# against real block dumps written by the real runNimbleBlock() - all
+# Windows-testable, same rationale as test-runNimbleBlock.R - plus the
+# attach-to-mod/save logic, reproduced here identically to both call sites in
+# R/runNimble.R (search that file for "consolidate.monitors2" and "iter.key"
+# to compare). If that logic is ever refactored into its own function, these
+# tests should call it directly instead of mirroring it.
 
 skip_if_not_installed("nimble")
 skip_if(identical(tolower(Sys.getenv("MANAGENIMBLE_TEST_NIMBLE", "true")), "false"),
@@ -60,8 +61,13 @@ make_dump_with_monitors2 <- function() {
   dump.path
 }
 
-fake_mod <- function() {
-  list(mcmcOutput = "placeholder", summary = data.frame(Parameter = c("mu", "sigma")),
+# Mirrors runNimble()'s actual mod <- list(mcmcOutput = mod.out$out,
+# iter.key = mod.out$iter.key, summary = ..., mcmc.info = ...) construction,
+# not a placeholder - mod$iter.key needs to be the real thing for the join
+# tests below to mean anything.
+fake_mod <- function(mod.out) {
+  list(mcmcOutput = mod.out$out, iter.key = mod.out$iter.key,
+       summary = data.frame(Parameter = c("mu", "sigma")),
        mcmc.info = c(nchains = 1, niterations = 400, burnin = 0, nthin = 2))
 }
 
@@ -69,12 +75,12 @@ test_that("consolidate.monitors2 = TRUE (the default) attaches mod$monitors2, id
   dump.path <- make_dump_with_monitors2()
   wd <- new_tmp(); old.wd <- setwd(wd); on.exit(setwd(old.wd), add = TRUE)
   mod.nam <- "modA"
-  mod <- fake_mod()
 
   # mirrors runNimble()'s own two-step call: gatherNimble() first, its
   # retained.iters threaded into gatherNimble2().
   mod.out <- gatherNimble(read.path = dump.path, burnin = 0, ni.block = 200,
                           base.thin = 2, max.samples.saved = NULL)
+  mod <- fake_mod(mod.out)
   monitors2.out <- gatherNimble2(read.path = dump.path, burnin = 0, ni.block = 200, nt2 = 50,
                                  base.thin = 2, retained.iters = mod.out$retained.iters,
                                  save.path = paste0(mod.nam, "_monitors2.rds"))
@@ -91,18 +97,28 @@ test_that("consolidate.monitors2 = TRUE (the default) attaches mod$monitors2, id
   expect_equal(loaded$monitors2, readRDS(paste0(mod.nam, "_monitors2.rds")))
   expect_equal(dim(loaded$monitors2$out), c(8L, 8L))   # 2 blocks x 4 draws/block (200/50), z[1:8]
   expect_equal(nrow(loaded$monitors2$iter.key), 8L)
+
+  # The actual point of this feature: mod$iter.key must be present, saved,
+  # and able to join against mod$monitors2$iter.key with no orphaned rows -
+  # confirming the correspondence promised in ?runNimble is genuinely
+  # recoverable from the saved object, round-tripped through disk.
+  expect_true("iter.key" %in% names(loaded))
+  expect_equal(nrow(loaded$iter.key), nrow(loaded$mcmcOutput))
+  joined <- merge(loaded$monitors2$iter.key, loaded$iter.key, by = c("chn", "iter"))
+  expect_equal(nrow(joined), nrow(loaded$monitors2$iter.key))
 })
 
 test_that("consolidate.monitors2 = FALSE reproduces the old behaviour: no mod$monitors2, standalone file still written", {
   dump.path <- make_dump_with_monitors2()
   wd <- new_tmp(); old.wd <- setwd(wd); on.exit(setwd(old.wd), add = TRUE)
   mod.nam <- "modB"
-  mod <- fake_mod()
-  sav.model <- TRUE
-  if (sav.model) R.utils::saveObject(mod, mod.nam)   # runNimble() already saved mod earlier regardless
 
   mod.out <- gatherNimble(read.path = dump.path, burnin = 0, ni.block = 200,
                           base.thin = 2, max.samples.saved = NULL)
+  mod <- fake_mod(mod.out)
+  sav.model <- TRUE
+  if (sav.model) R.utils::saveObject(mod, mod.nam)   # runNimble() already saved mod earlier regardless
+
   monitors2.out <- gatherNimble2(read.path = dump.path, burnin = 0, ni.block = 200, nt2 = 50,
                                  base.thin = 2, retained.iters = mod.out$retained.iters,
                                  save.path = paste0(mod.nam, "_monitors2.rds"))
@@ -115,12 +131,26 @@ test_that("consolidate.monitors2 = FALSE reproduces the old behaviour: no mod$mo
   expect_true(file.exists(paste0(mod.nam, "_monitors2.rds")))   # standalone file always written
   loaded <- R.utils::loadObject(mod.nam)
   expect_false("monitors2" %in% names(loaded))
+  # mod$iter.key is unconditional (unlike monitors2, it doesn't depend on
+  # consolidate.monitors2) - present even here.
+  expect_true("iter.key" %in% names(loaded))
 })
 
-test_that("parameters2 empty: mod never gets a monitors2 element, regardless of consolidate.monitors2, and no standalone file is written", {
+test_that("parameters2 empty: mod never gets a monitors2 element, regardless of consolidate.monitors2, and no standalone file is written; mod$iter.key is still present", {
   wd <- new_tmp(); old.wd <- setwd(wd); on.exit(setwd(old.wd), add = TRUE)
   mod.nam <- "modC"
-  mod <- fake_mod()
+
+  m <- toy()
+  d <- new_tmp()
+  f <- file.path(d, "mod_chn1_1.RData")
+  suppressMessages(
+    runNimbleBlock(mod.lst = list(m$code, m$cons, m$dat, m$ini, m$pars),
+                   n.iter = 200, n.thin = 2, tmp.path = new_tmp(), dump.file.path = f)
+  )
+  mod.out <- gatherNimble(read.path = d, burnin = 0, ni.block = 200,
+                          base.thin = 2, max.samples.saved = NULL)
+  mod <- fake_mod(mod.out)
+
   parameters2 <- character()
   consolidate.monitors2 <- TRUE   # even at the default, nothing should happen
 
@@ -130,4 +160,6 @@ test_that("parameters2 empty: mod never gets a monitors2 element, regardless of 
 
   expect_false("monitors2" %in% names(mod))
   expect_false(file.exists(paste0(mod.nam, "_monitors2.rds")))
+  expect_true("iter.key" %in% names(mod))
+  expect_equal(nrow(mod$iter.key), nrow(mod$mcmcOutput))
 })

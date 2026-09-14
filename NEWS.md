@@ -1,3 +1,43 @@
+# manageNimble 0.3.1
+
+## Follow-up fix: `mod$iter.key` (0.3.0's own correspondence key) was never actually attached to the saved model object
+
+Found while reviewing 0.3.0's own documentation: `?runNimble` told callers to
+"join the two sets' `iter.key` data frames on `c("chn", "iter")`" to recover
+the primary/secondary correspondence 0.3.0 introduced - but `mod` was only
+ever built as `list(mcmcOutput = mod.out$out, summary = sumTab, mcmc.info =
+mcmc.info)` (all three `mod <- list(...)` sites in `runNimble.R`).
+`mod.out$iter.key` (the primary set's own key, computed inside
+`gatherNimble()`) was used internally to derive `retained.iters` for
+`gatherNimble2()`, then discarded - never part of `mod`. Only
+`mod$monitors2$iter.key` (the secondary set's key) survived into the saved
+object, leaving no primary-side key to join it against.
+
+Confirmed by execution that there was no fallback either: `coda::as.mcmc()`
+on a bare matrix always sets `mcpar` to `start = 1, thin = 1` regardless of
+the data, so `mcmcOutput`'s own row metadata carries no relationship to true
+NIMBLE iteration numbers - especially once `max.samples.saved` forces an
+uneven subsample. Without `mod$iter.key`, the correspondence 0.3.0 verified
+internally (and its own test suite exercises directly) was not actually
+recoverable by a caller working from the saved/returned model object.
+
+Fixed: all three `mod <- list(...)` sites now also set
+`iter.key = mod.out$iter.key`, unconditionally (it doesn't depend on
+`parameters2`/`consolidate.monitors2` - it describes `mcmcOutput` itself, and
+is useful on its own even without a second monitor set). `?runNimble`'s
+`\value` section documents it and its role; the `parameters2`/`monitors2`
+entries now correctly say to join `mod$iter.key` against
+`mod$monitors2$iter.key`, rather than an instruction that could not actually
+be carried out.
+
+`test-runNimble-monitors2.R`'s fixtures now build `mod` from the real
+`gatherNimble()` output (`mcmcOutput = mod.out$out, iter.key =
+mod.out$iter.key`) rather than a placeholder, and a new assertion performs
+the actual `merge(..., by = c("chn", "iter"))` join against
+`mod$monitors2$iter.key` on the saved-and-reloaded object - confirming the
+correspondence is genuinely recoverable end to end, not just internally
+consistent.
+
 # manageNimble 0.3.0
 
 ## Fixed: the two monitor sets (`parameters`/`parameters2`) could silently fall out of correspondence - **CHANGES RESULTS**
