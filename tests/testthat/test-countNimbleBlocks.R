@@ -24,6 +24,22 @@ test_that("chains are truncated to the length of the shortest", {
   expect_equal(r$burnin.realized, 1000)
 })
 
+test_that("max.nblks caps the block count below what's on disk, and never raises it", {
+  # runNimble()'s seeded manual mode uses this so blocks written past the
+  # stopping point (polling overshoot) can't change what is gathered.
+  d <- make_empty_dump_dir(list(1:7, 1:6))
+  r <- countNimbleBlocks(d, burnin = 0.5, ni.block = 1000, max.nblks = 4)
+
+  expect_equal(r$nblks, 4)
+  expect_equal(r$burnin, 2000)                    # proportional burn-in against the capped length
+  expect_equal(unname(r$m[, "blk"]), c(3L, 4L, 3L, 4L))
+  # indistinguishable from a run that only ever wrote 4 blocks per chain
+  expect_identical(r, countNimbleBlocks(make_empty_dump_dir(list(1:4, 1:4)), 0.5, 1000))
+  # a cap at or above the shortest chain changes nothing; NULL is the default
+  expect_identical(countNimbleBlocks(d, 0.5, 1000, max.nblks = 10), countNimbleBlocks(d, 0.5, 1000))
+  expect_identical(countNimbleBlocks(d, 0.5, 1000, max.nblks = NULL), countNimbleBlocks(d, 0.5, 1000))
+})
+
 test_that("proportional burn-in grows as the run grows, retiring earlier blocks", {
   # Same chains, two lengths. Documents the growing-burn-in semantics.
   r4 <- countNimbleBlocks(make_empty_dump_dir(list(1:4, 1:4)), 0.5, 1000)

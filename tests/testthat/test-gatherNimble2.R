@@ -238,3 +238,16 @@ test_that("PROPERTY: with max.samples.saved-driven additional thinning on the pr
   # independent of the new iter.key mechanism entirely.
   expect_true(all(o$out[, "iter2"] %in% g$out[, "iter"]))
 })
+
+test_that("max.nblks: the second set ignores blocks past the cap, matching the primary set", {
+  d <- make_dump_dir(list(1:6, 1:6), ni.block = 100, with_samp2 = TRUE, nt2 = 50)
+  g <- gatherNimble(d, burnin = 0.5, ni.block = 100, base.thin = 1,
+                    max.samples.saved = NULL, max.nblks = 4)
+  o <- gatherNimble2(d, burnin = 0.5, ni.block = 100, nt2 = 50, base.thin = 1,
+                     retained.iters = g$retained.iters, max.nblks = 4)
+
+  ref <- gather_both(make_dump_dir(list(1:4, 1:4), ni.block = 100, with_samp2 = TRUE, nt2 = 50),
+                     burnin = 0.5, ni.block = 100, nt2 = 50)
+  expect_identical(o, ref$secondary)
+  expect_true(max(o$out[, "iter2"]) <= 400)
+})

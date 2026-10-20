@@ -1,10 +1,10 @@
 gatherNimble <- function(read.path, burnin, ni.block, base.thin, max.samples.saved,
-                         directive.file = "") {
+                         directive.file = "", max.nblks = NULL) {
   # coda/mcmcOutput/stringr functions used below are resolved through this
   # package's own NAMESPACE imports, not the caller's search path, so no
   # require() is needed here (or anywhere else in this package) for a hard
   # dependency - see DESCRIPTION's Imports: and NAMESPACE's importFrom().
-  cNB <- countNimbleBlocks(read.path, burnin, ni.block)
+  cNB <- countNimbleBlocks(read.path, burnin, ni.block, max.nblks = max.nblks)
   m <- cNB$m
   if(nrow(m) == 0) {
     if(directive.file != "") writeLines("STOP", directive.file)

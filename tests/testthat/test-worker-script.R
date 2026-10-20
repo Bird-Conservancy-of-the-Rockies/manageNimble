@@ -36,7 +36,8 @@ test_that("the multi-line runNimbleBlock() calls survive the writeLines split", 
 test_that("every top-level symbol the worker reads is either saved to disk, assigned, or a local helper", {
   saved <- c("model.path", "constants", "data", "inits", "parameters", "ni", "nt",
              "dump.path", "SamplerSourcePath", "check.freq",
-             "automate.convergence.checks", "directive.file", "parameters2", "nt2")
+             "automate.convergence.checks", "directive.file", "parameters2", "nt2",
+             "inits.per.chain", "rng.streams")
   assigned <- c("chn", "path.NimbleWorkspace", "i", "dump.file.path", "mod.comp",
                 "status.file", "status.chain", "i.stop", "directive", "error.log")
   # read_state()/write_state() are defined in-script (finding F26); e/path/text/
@@ -99,11 +100,60 @@ test_that("the tryCatch/error-log convention actually catches and logs a worker 
 test_that("the objects runNimble saves are exactly the ones the worker loads", {
   # The save() call and the worker script have to be kept in step by hand.
   b <- fn_text(manageNimble::runNimble)
-  expect_true(grepl('"parameters2", "nt2"', b, fixed = TRUE))
+  expect_true(grepl('"parameters2", "nt2", "inits.per.chain", "rng.streams"', b, fixed = TRUE))
 
   txt <- paste(worker_script_lines(), collapse = "\n")
   expect_true(grepl("monitors2 = parameters2", txt, fixed = TRUE))
   expect_true(grepl("n.thin2 = nt2", txt, fixed = TRUE))
+  expect_true(grepl("rng.streams[[as.integer(chn)]]", txt, fixed = TRUE))
+  expect_true(grepl("if(inits.per.chain) inits <- inits[[as.integer(chn)]]", txt, fixed = TRUE))
+})
+
+test_that("the worker installs its RNG stream and selects its inits before anything can draw a random number", {
+  # Order matters: the stream must be in place before the model file is
+  # sourced, the model built/compiled, or the first block sampled; per-chain
+  # inits must be selected before the first runNimbleBlock() call reads them.
+  # Both inside the tryCatch, so a failure is logged like any other.
+  txt <- worker_script_lines()
+  i.try    <- which(txt == "tryCatch({")
+  i.seed   <- which(txt == "if(!is.null(rng.streams)) {")
+  i.sel    <- which(txt == "if(inits.per.chain) inits <- inits[[as.integer(chn)]]")
+  i.source <- which(txt == "source(model.path)")
+  i.block  <- which(grepl("runNimbleBlock(", txt, fixed = TRUE))[1]
+  expect_length(i.seed, 1)
+  expect_length(i.sel, 1)
+  expect_true(i.try < i.seed && i.seed < i.sel && i.sel < i.source && i.source < i.block)
+
+  # The worker's RNGkind() call must name the same generator, normal and
+  # sample kinds the parent derived the streams under.
+  i.kind <- which(grepl("^RNGkind\\(", txt))
+  expect_length(i.kind, 1)
+  call <- parse(text = txt[i.kind])[[1]]
+  expect_equal(unname(vapply(as.list(call)[-1], as.character, character(1))),
+               unname(RNG_KIND))
+})
+
+test_that("defaults leave seeding off", {
+  expect_null(formals(manageNimble::runNimble)$seed)
+})
+
+test_that("absolute burn-in warm-up waits for every chain to stop before re-counting", {
+  # Re-counting on a 60-s timer let repeated RESUMEs give chains different
+  # targets and the first check gather mid-run, so the block count depended on
+  # timing. Each pass now waits for all chains to report STOP.
+  b <- fn_text(manageNimble::runNimble)
+  expect_true(grepl("wait_for_all_stop <- function()", b, fixed = TRUE))
+  expect_true(grepl('write_state("GO", directive.file) wait_for_all_stop() check.blocks <- countNimbleBlocks(',
+                    b, fixed = TRUE))
+  expect_false(grepl('write_state("GO", directive.file) Sys.sleep(60) check.blocks <- countNimbleBlocks(',
+                     b, fixed = TRUE))
+})
+
+test_that("seeded manual mode gathers a fixed number of blocks, unseeded is unchanged", {
+  b <- fn_text(manageNimble::runNimble)
+  expect_true(grepl("nblks.cap <- if (!is.null(seed) && !automate.convergence.checks)", b, fixed = TRUE))
+  expect_true(grepl("if (!is.null(nblks.cap) && nblks >= nblks.cap) nblks <- nblks.cap", b, fixed = TRUE))
+  expect_true(grepl("max.nblks = nblks.cap", b, fixed = TRUE))
 })
 
 test_that("the whole worker body is wrapped in tryCatch, logging to chn<c>_error.log", {

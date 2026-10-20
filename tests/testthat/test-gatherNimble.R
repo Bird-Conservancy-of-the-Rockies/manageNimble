@@ -205,3 +205,19 @@ test_that("FIXED: fractional burnin.needed no longer crashes gatherNimble() (sam
                      max.samples.saved = NULL)
   expect_equal(nrow(g5$out), 2 * 3 * 201)
 })
+
+test_that("max.nblks gathers exactly as if the extra blocks had never been written", {
+  # Blocks 5-6 stand in for polling overshoot in seeded manual mode.
+  for (mss in list(NULL, 50)) {
+    g <- gatherNimble(make_dump_dir(list(1:6, 1:6), ni.block = 100), burnin = 0.5,
+                      ni.block = 100, base.thin = 1, max.samples.saved = mss, max.nblks = 4)
+    ref <- gatherNimble(make_dump_dir(list(1:4, 1:4), ni.block = 100), burnin = 0.5,
+                        ni.block = 100, base.thin = 1, max.samples.saved = mss)
+    expect_equal(g$nblks, 4)
+    expect_equal(g$out[, c("iter", "chain", "alpha")], ref$out[, c("iter", "chain", "alpha")])
+    expect_identical(g$retained.iters, ref$retained.iters)
+    expect_identical(g$iter.key, ref$iter.key)
+    expect_equal(g$additional.thin.rate, ref$additional.thin.rate)
+    expect_true(max(g$out[, "iter"]) <= 400)
+  }
+})

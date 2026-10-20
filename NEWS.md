@@ -1,3 +1,145 @@
+# manageNimble 0.4.0
+
+Two new, opt-in capabilities in `runNimble()`: chain-specific initial values
+and reproducible sampling. **Non-breaking**: a call with a single inits list and
+no `seed` behaves exactly as before - the same values reach `nimbleModel()`, no
+random numbers are drawn or seeded anywhere new, and the saved model object
+has the same elements. Two narrow behaviour changes are listed under
+"Backward compatibility" below.
+
+## New: chain-specific initial values (`inits`)
+
+`inits` now accepts three forms:
+- a single named list, used by every chain (unchanged);
+- an unnamed list of `nc` named lists, one per chain;
+- a function returning a named list, called once per chain - as `f(chn)` if
+  it takes an argument, otherwise `f()`.
+
+The form is read from the `names` attribute, not guessed from the contents: a
+fully named list (or `list()`, or `NULL`, or any non-list) is a single inits
+list; a list with no names is per-chain and must have length `nc`; a partly
+named list is an error. All of this is validated before `dump.path` is touched.
+
+The function is evaluated **in the parent session, before any worker
+launches**, not inside each worker. So the common idiom
+`function() list(z = zst, mu = rnorm(1))` can refer to session objects like
+`zst` (a worker is a fresh `Rscript` process where they don't exist), and a
+failing or malformed function stops the run before anything is written. The
+per-chain result is saved to `NimbleObjects.RData`; each worker keeps only its
+own element (`inits <- inits[[chn]]`, just before the unchanged
+`runNimbleBlock()` call).
+
+For the per-chain and function forms, the inits actually used are recorded as
+`mod$inits` (a list of `nc` named lists).
+
+## New: reproducible sampling (`seed`)
+
+`seed = NULL` (default) leaves the RNG alone, as before. A single whole number:
+- derives one L'Ecuyer-CMRG stream per chain in the parent with
+  `parallel::nextRNGStream()`; these are guaranteed non-overlapping, unlike
+  `set.seed(seed + chn)`, whose seeds also collide across runs (seed 1 /
+  chain 2 is seed 2 / chain 1);
+- uses an independent substream (`parallel::nextRNGSubStream()`) of each
+  chain's stream to generate that chain's inits, when `inits` is a function;
+- has each worker install its stream as the first statement inside its
+  `tryCatch`, before sourcing the model file or building, compiling or
+  sampling, and never reseed - continuation blocks carry on in the same stream;
+- restores the parent session's RNG kind and state afterwards, so calling
+  `runNimble()` doesn't disturb the caller's own random numbers;
+- is recorded as `mod$rng`: the seed, the generator kinds, and an `nc` x 7
+  matrix of each chain's starting stream.
+
+Verified by execution, in separate worker-like `Rscript` processes, that
+NIMBLE's compiled samplers draw from the worker's R RNG and honour
+L'Ecuyer-CMRG: RW and conjugate samplers, and `nimbleHMC`'s NUTS. Same seed and
+chain gave identical draws for the first block and a continuation block; a
+different seed or chain gave different draws.
+
+`seed` is validated up front: `NULL`, or a single, finite whole number within
+integer range.
+
+## Fixed: the number of blocks gathered could depend on timing
+
+Reproducing the saved object also needs the same number of blocks gathered
+every time. Two code paths let it vary with how fast chains ran relative to
+the parent's polling:
+- **Automated mode, absolute burn-in (`nb > 1`) warm-up** - only when the
+  first `check.freq` blocks don't get past burn-in
+  (`check.freq <= floor(nb / ni)`). The parent wrote `RESUME`, slept 60 s and
+  re-counted without waiting for chains to finish. Repeated `RESUME`s could
+  give chains different targets, and the first convergence check gathered
+  while chains were still running. It now waits for every chain to report
+  `STOP` before re-counting, so each `RESUME` adds exactly `check.freq` blocks
+  per chain. **Applies to all runs, seeded or not** - it's a race fix, and its
+  outcome is one the old code could already produce.
+- **Manual mode (`check.freq = NULL`)**. Workers sample until the parent's
+  5-minute check sees enough draws, so they overshoot by however many blocks
+  fit in the rest of the sleep. The block count feeds proportional burn-in and
+  the `max.samples.saved` subsample. **With a seed only**, the run now gathers
+  exactly the smallest number of blocks that satisfies the existing stopping
+  rule, and ignores the rest. Unseeded manual-mode runs gather everything
+  available, exactly as before - changing that would change existing results.
+
+Plumbing: `countNimbleBlocks()`, `gatherNimble()` and `gatherNimble2()` take a
+new optional `max.nblks` (default `NULL` = every block, as before).
+
+## Backward compatibility
+
+Unchanged for a single inits list and no seed, except:
+- **A single inits list containing a list-valued element is now an error.**
+  `nimbleModel()` silently ignores inits names it doesn't recognise -
+  list-valued ones included (verified) - so a per-chain list passed with names,
+  `list(chain1 = ..., chain2 = ...)`, used to run with every initial value
+  quietly discarded. It now stops with an explanation.
+- **The automated-mode warm-up synchronisation above**, for runs with
+  `check.freq <= floor(nb / ni)`.
+
+Internal-only differences: `ModRunScript.R` gains the seed-install and inits-
+selection lines, and `NimbleObjects.RData` gains `inits.per.chain` and
+`rng.streams` (`FALSE`/`NULL` for an unseeded single-list run). Both files live
+in `dump.path`.
+
+`parallel` (base R) is now declared in `Imports`.
+
+## Documentation
+
+`?runNimble` documents `inits` (three forms and the detection rule), `seed`,
+exactly what is and isn't reproducible, and the new `mod$rng`/`mod$inits`
+elements. It now also lists `mod$warning`, which was always present on
+non-convergence but undocumented. README gains "Initial values, seeding and
+reproducibility", and corrects two stale items: it still listed the removed
+`forceFinishNimble()`, and described the second monitor set as a plain matrix
+(it has been `list(out, iter.key)` since 0.3.0).
+
+## Tests
+
+- `test-reproducibility-helpers.R`: every `inits` form and edge case, the
+  list-valued guard, generator calling conventions and error messages,
+  reproducible/independent stream derivation, exact restoration of the
+  session's RNG kind and state (including no prior `.Random.seed`, and a
+  session with non-default normal/sample kinds), and that
+  `minGatherBlocks()` is the minimal count passing manual mode's stopping rule.
+- `test-runNimble-inits-seed-validation.R`: genuine `runNimble()` calls - bad
+  seeds and inits fail before `dump.path` is created; valid ones get past
+  validation with the inits function called once per chain.
+- `test-runNimble-reproducibility.R` (compiles models; gated by
+  `MANAGENIMBLE_TEST_NIMBLE`): runs the real generated worker script in
+  separate `Rscript` processes. Same seed gives identical draws and inits in
+  both blocks; different seed or chain differs; per-chain inits reach the
+  right chain. Re-run with the worker's seed installation disabled, the
+  draw-identity assertions fail, so the test does discriminate.
+- `test-worker-script.R`: new saved objects; seed install and inits
+  selection come before anything that draws random numbers; the worker's
+  `RNGkind()` matches the parent's; the warm-up waits for `STOP`; seeded
+  manual mode caps the gathered blocks.
+- `max.nblks` coverage in the `countNimbleBlocks`/`gatherNimble`/
+  `gatherNimble2` tests.
+
+Not covered by execution: `runNimble()`'s own parent loop can't run on Windows
+(GNU parallel), so the warm-up wait and the manual-mode cap inside it are
+tested statically. The pieces they rely on (`max.nblks`, `minGatherBlocks()`)
+are tested by execution.
+
 # manageNimble 0.3.1
 
 ## Follow-up fix: `mod$iter.key` (0.3.0's own correspondence key) was never actually attached to the saved model object

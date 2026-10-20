@@ -8,7 +8,22 @@ runNimble <-
            max.tries = 10, dump.path = "dump",
            SamplerSourcePath = NA, delete.blocks = TRUE,
            parameters2 = character(), nt2 = NULL,
-           consolidate.monitors2 = TRUE) {
+           consolidate.monitors2 = TRUE, seed = NULL) {
+  # inits: a single named list (every chain starts from it - the original
+  # form), an unnamed list of nc named lists (one per chain), or a function
+  # returning a named list (called here, in the parent, once per chain: f(chn)
+  # if it takes an argument, f() otherwise). See classifyInits() for the exact
+  # rule. Per-chain and generated inits are saved as one list; each worker
+  # keeps only its own element, and the inits used are recorded as mod$inits.
+  #
+  # seed: NULL (default) leaves the RNG alone, as before. A single whole number
+  # derives one non-overlapping L'Ecuyer-CMRG stream per chain (and an
+  # independent substream for generating that chain's inits); each worker
+  # installs its stream before anything else, so draws are reproducible.
+  # Recorded as mod$rng. Seeded manual-mode runs also gather a fixed number of
+  # blocks (see the manual branch below) so polling overshoot can't change
+  # the result.
+  #
   # parameters2 / nt2: optional second set of monitored parameters saved at its
   # own thinning rate, for quantities too large to retain at nt - latent state
   # arrays, for example. They take no part in convergence checking; they are
@@ -68,6 +83,13 @@ runNimble <-
            "(manual mode); it is the sole criterion used to decide when sampling stops.")
     if(automate.convergence.checks && !is.null(max.tries) && max.tries < 1)
       stop("max.tries must be at least 1 (or NULL for unlimited retries).")
+    if(!is.null(seed)) {
+      if(length(seed) != 1 || !is.numeric(seed) || is.na(seed) || !is.finite(seed) ||
+         seed %% 1 != 0 || abs(seed) > .Machine$integer.max)
+        stop("seed must be NULL or a single whole number (got ",
+             paste(format(seed), collapse = ", "), ").")
+      seed <- as.integer(seed)
+    }
 
     # nimble is required (not just imported) because compileNimble()'s C++
     # interop has been unreliable in the past when the package is only
@@ -82,6 +104,27 @@ runNimble <-
              "Install it with install.packages('nimbleHMC').")
       require(nimbleHMC) # attached so a user-supplied SamplerSourcePath script can call its functions unqualified
     }
+
+    # Chain streams and per-chain inits are resolved here, before dump.path is
+    # touched or any worker launches, so a bad inits form or a failing inits
+    # function stops the run while there's nothing to clean up. Both leave the
+    # session's RNG state as they found it.
+    rng.streams <- if(!is.null(seed)) deriveChainStreams(seed, nc) else NULL
+    chain.inits <- prepareChainInits(inits, nc, rng.streams)
+    inits <- chain.inits$inits
+    inits.per.chain <- chain.inits$per.chain
+    # Appended to every saved mod; empty (so mod is unchanged) for a single
+    # inits list and no seed.
+    provenance <- list()
+    if(!is.null(seed))
+      provenance$rng <- list(seed = seed, kind = RNG_KIND,
+                             streams = do.call(rbind, rng.streams))
+    if(!is.null(chain.inits$used)) provenance$inits <- chain.inits$used
+    # Seeded manual mode gathers exactly this many blocks (see the manual
+    # branch below); NULL leaves every other run as it was.
+    nblks.cap <- if(!is.null(seed) && !automate.convergence.checks)
+      minGatherBlocks(ni, nb, nt, max.samples.saved) else NULL
+
     if(dir.exists(dump.path)) unlink(dump.path, recursive = TRUE)
     dir.create(dump.path)
     directive.file <- paste0(dump.path, "/runNimbleDirective.txt")
@@ -138,6 +181,28 @@ runNimble <-
       if(length(fl) == 0) return(0L)
       length(unique(str_split(fl, "_", simplify = TRUE)[,2]))
     }
+    # Same retrying read as the worker's own read_state(): a status file caught
+    # mid-rewrite reads as zero lines or an error, never as a state.
+    read_state <- function(path) {
+      x <- try(readLines(path), silent = TRUE)
+      while(inherits(x, "try-error") || length(x) != 1) {
+        Sys.sleep(1)
+        x <- try(readLines(path), silent = TRUE)
+      }
+      x
+    }
+    # Blocks until every chain has finished its current target and reported
+    # STOP. After a RESUME, each chain then has exactly check.freq more blocks,
+    # so block counts never depend on how fast chains happen to run.
+    wait_for_all_stop <- function() {
+      repeat {
+        check_workers_alive()
+        status.chains <- vapply(seq_len(nc), function(cn)
+          read_state(paste0(dump.path, "/block", cn, "Status.txt")), character(1))
+        if(all(status.chains == "STOP")) break
+        Sys.sleep(10)
+      }
+    }
 
     if(automate.convergence.checks) {
       for(cn in 1:nc) {
@@ -153,7 +218,7 @@ runNimble <-
     save(list = c("model.path", "constants", "data", "inits", "parameters", "ni",
                   "nt", "dump.path", "SamplerSourcePath", "check.freq",
                   "automate.convergence.checks", "directive.file",
-                  "parameters2", "nt2"),
+                  "parameters2", "nt2", "inits.per.chain", "rng.streams"),
          file = paste0(dump.path, "/NimbleObjects.RData"))
     #[Create R script for kicking off nimble run here]. Call it "ModRunScript.R"
     #___________________________________________________________________________#
@@ -183,6 +248,15 @@ runNimble <-
         "file.rename(tmp, path)",
       "}",
       "tryCatch({",
+      # Before anything that could draw a random number (sourcing the model
+      # file, building, compiling, sampling): install this chain's stream when
+      # seeded, then select this chain's inits when they are per-chain. Seeded
+      # once per worker, so continuation blocks continue the same stream.
+      "if(!is.null(rng.streams)) {",
+        "RNGkind(\"L'Ecuyer-CMRG\", \"Inversion\", \"Rejection\")",
+        "assign('.Random.seed', rng.streams[[as.integer(chn)]], envir = globalenv())",
+      "}",
+      "if(inits.per.chain) inits <- inits[[as.integer(chn)]]",
       "if(!dir.exists(paste0(dump.path, '/tmp', chn))) dir.create(paste0(dump.path, '/tmp', chn))",
       "source(model.path)",
       "i <- 1",
@@ -290,11 +364,14 @@ runNimble <-
 
           check.blocks <- countNimbleBlocks(read.path = dump.path, burnin = nb, ni.block = ni)
           if(nb > 1) {  # Need to keep sampling until we've passed burnin if burnin is absolute.
+            # Waiting for every chain to report STOP before re-counting (not
+            # re-counting on a timer) means each pass adds exactly check.freq
+            # blocks to every chain, so the count at the first check doesn't
+            # depend on how fast the chains happen to run.
             while(!nrow(check.blocks$m) > 0) {
-              check_workers_alive()
               for(cn in 1:nc) write_state("RESUME", paste0(dump.path, '/block',cn,'Status.txt'))
               write_state("GO", directive.file)
-              Sys.sleep(60)
+              wait_for_all_stop()
               check.blocks <- countNimbleBlocks(read.path = dump.path, burnin = nb, ni.block = ni)
             }
           }
@@ -323,8 +400,8 @@ runNimble <-
           mcmc.info <- c(nchains = nc, niterations = ni.now,
                          burnin = nb.now, nthin = nt.now)
           sumTab <- mod.check$s
-          mod <- list(mcmcOutput = mod.out$out, iter.key = mod.out$iter.key,
-                     summary = sumTab, mcmc.info = mcmc.info)
+          mod <- c(list(mcmcOutput = mod.out$out, iter.key = mod.out$iter.key,
+                        summary = sumTab, mcmc.info = mcmc.info), provenance)
           if(sav.model) R.utils::saveObject(mod, mod.nam)
           if(rtrn.model) assign(mod.nam, mod, envir = .GlobalEnv)
           if(length(par.fuzzy.track) == 0) {
@@ -358,9 +435,9 @@ runNimble <-
       if(!mod.check.result) {
         warn.message <- paste0("Rhat did not decrease after ", nchecks,
                                " checks. Model abandoned before reaching convergence targets.")
-        mod <- list(mcmcOutput = mod.out$out, iter.key = mod.out$iter.key,
-                   summary = sumTab, mcmc.info = mcmc.info,
-                   warning = warn.message)
+        mod <- c(list(mcmcOutput = mod.out$out, iter.key = mod.out$iter.key,
+                      summary = sumTab, mcmc.info = mcmc.info,
+                      warning = warn.message), provenance)
         if(sav.model) R.utils::saveObject(mod, mod.nam)
         if(rtrn.model) assign(mod.nam, mod, envir = .GlobalEnv)
       }
@@ -377,7 +454,8 @@ runNimble <-
       if(length(parameters2) > 0) {
         monitors2.out <- gatherNimble2(read.path = dump.path, burnin = nb, ni.block = ni, nt2 = nt2,
                                        base.thin = nt, retained.iters = mod.out$retained.iters,
-                                       save.path = paste0(mod.nam, "_monitors2.rds"))
+                                       save.path = paste0(mod.nam, "_monitors2.rds"),
+                                       max.nblks = nblks.cap)
         if(consolidate.monitors2 && !is.null(monitors2.out)) {
           mod$monitors2 <- monitors2.out
           if(sav.model) R.utils::saveObject(mod, mod.nam)
@@ -409,6 +487,11 @@ runNimble <-
         }
         write.csv(check.blocks$m, paste0(dump.path, "/m.csv"))
         nblks <- check.blocks$nblks
+        # Seeded runs: once the shortest chain has nblks.cap blocks, use exactly
+        # that many, ignoring however far the chains ran on during the 300-s
+        # sleep (or finished after STOP). nblks.cap is the smallest count that
+        # passes do.gather.check below, so the stopping decision is unchanged.
+        if(!is.null(nblks.cap) && nblks >= nblks.cap) nblks <- nblks.cap
         nb.now <- ifelse(nb<1, nb*ni*nblks, nb)
         ni.now <- ni*nblks
 
@@ -418,7 +501,8 @@ runNimble <-
           mod.out <- suppressWarnings(
             gatherNimble(read.path = dump.path, directive.file = directive.file,
                          burnin = nb, ni.block = ni, base.thin = nt,
-                         max.samples.saved = max.samples.saved)
+                         max.samples.saved = max.samples.saved,
+                         max.nblks = nblks.cap)
           )
           if(!is.null(par.ignore)) mod.out.subset <- mcmcOutputSubset(mod.out$out, par.drop = par.ignore)
           mcmc.info <- c(nchains = nc, niterations = ni.now,
@@ -428,8 +512,8 @@ runNimble <-
           } else {
             sumTab <- summary(mod.out$out, MCEpc = F, Rhat = T, n.eff = T, f = T, overlap0 = T, verbose = FALSE)
           }
-          mod <- list(mcmcOutput = mod.out$out, iter.key = mod.out$iter.key,
-                     summary = sumTab, mcmc.info = mcmc.info)
+          mod <- c(list(mcmcOutput = mod.out$out, iter.key = mod.out$iter.key,
+                        summary = sumTab, mcmc.info = mcmc.info), provenance)
           if(sav.model) R.utils::saveObject(mod, mod.nam)
           if(rtrn.model) assign(mod.nam, mod, envir = .GlobalEnv)
           run.complete <- TRUE
@@ -450,7 +534,8 @@ runNimble <-
       if(length(parameters2) > 0) {
         monitors2.out <- gatherNimble2(read.path = dump.path, burnin = nb, ni.block = ni, nt2 = nt2,
                                        base.thin = nt, retained.iters = mod.out$retained.iters,
-                                       save.path = paste0(mod.nam, "_monitors2.rds"))
+                                       save.path = paste0(mod.nam, "_monitors2.rds"),
+                                       max.nblks = nblks.cap)
         if(consolidate.monitors2 && !is.null(monitors2.out)) {
           mod$monitors2 <- monitors2.out
           if(sav.model) R.utils::saveObject(mod, mod.nam)

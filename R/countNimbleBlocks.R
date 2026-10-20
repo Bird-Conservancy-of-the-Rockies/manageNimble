@@ -1,4 +1,4 @@
-countNimbleBlocks <- function(read.path, burnin, ni.block) {
+countNimbleBlocks <- function(read.path, burnin, ni.block, max.nblks = NULL) {
   ##  This could be made more flexible, but for now use a stereotyped approach:
   fl <- list.files(read.path)
   fl <- fl[which(str_detect(fl, "mod_chn"))]
@@ -25,6 +25,10 @@ countNimbleBlocks <- function(read.path, burnin, ni.block) {
            "Investigate why the block(s) are missing (see worker logs) before resuming.")
   }
   nblks <- min(tapply(m[,2], m[,1], max))
+  # max.nblks only ever lowers the count, to ignore blocks beyond a fixed
+  # target - runNimble()'s seeded manual mode uses it so that polling overshoot
+  # can't change what gets gathered.
+  if(!is.null(max.nblks)) nblks <- min(nblks, as.integer(max.nblks))
   m <- m[which(m[,2] <= nblks),,drop = FALSE] # Make chains same length (chop off excess blocks on longer chains)
 
   # Drop blocks that only contain burnin

@@ -38,6 +38,17 @@ if (!exists("countNimbleBlocks", mode = "function")) {
   gatherNimble <- manageNimble:::gatherNimble
   gatherNimble2 <- manageNimble:::gatherNimble2
 }
+# Same, for the inits/seed helpers in R/reproducibility.R.
+if (!exists("classifyInits", mode = "function")) {
+  classifyInits <- manageNimble:::classifyInits
+  checkChainInits <- manageNimble:::checkChainInits
+  deriveChainStreams <- manageNimble:::deriveChainStreams
+  prepareChainInits <- manageNimble:::prepareChainInits
+  minGatherBlocks <- manageNimble:::minGatherBlocks
+  saveRNGState <- manageNimble:::saveRNGState
+  restoreRNGState <- manageNimble:::restoreRNGState
+  RNG_KIND <- manageNimble:::RNG_KIND
+}
 
 # ---------------------------------------------------------------------------
 # Working-directory helper. checkNimble() writes diagnostic CSVs into getwd()

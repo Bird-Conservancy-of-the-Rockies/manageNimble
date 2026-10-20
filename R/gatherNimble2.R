@@ -1,5 +1,5 @@
 gatherNimble2 <- function(read.path, burnin, ni.block, nt2 = 1, base.thin,
-                          retained.iters, save.path = NULL) {
+                          retained.iters, save.path = NULL, max.nblks = NULL) {
   # Gather the second monitor set (samp2) from the block dumps written by
   # runNimbleBlock(). Companion to gatherNimble(), which gathers the primary set.
   #
@@ -34,7 +34,7 @@ gatherNimble2 <- function(read.path, burnin, ni.block, nt2 = 1, base.thin,
          "member of the primary set's retained-iteration sequence, or the two ",
          "monitor sets cannot be kept in verifiable correspondence.")
 
-  cNB  <- countNimbleBlocks(read.path, burnin, ni.block)
+  cNB  <- countNimbleBlocks(read.path, burnin, ni.block, max.nblks = max.nblks)
   m    <- cNB$m
   if(nrow(m) == 0) {
     warning("gatherNimble2: no blocks remain after burn-in.")
