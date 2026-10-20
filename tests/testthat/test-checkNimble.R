@@ -142,7 +142,7 @@ test_that("a summary with no Rhat column stops and signals STOP to the workers",
 
 test_that("par.ignore's substring matching over-matches unless par.dontign rescues it", {
   # This is documented, intentional behaviour (man/checkNimble.Rd: par.ignore
-  # matches on "names containing" the given strings) -- not a bug. par.ignore =
+  # matches on "names containing" the given strings). par.ignore =
   # "p" is intended to skip p[1], but it also removes beta.p[1] and mu.p, both
   # badly unconverged, leaving only alpha to be checked. par.dontign exists
   # precisely to rescue cases like this (see the next test); a caller who
