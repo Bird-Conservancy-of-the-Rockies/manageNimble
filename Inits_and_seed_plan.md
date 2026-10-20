@@ -1,10 +1,12 @@
 # Plan: chain-specific inits and reproducible seeding in `runNimble()`
 
-Status: **implemented 2026-10-20, uncommitted on `main`** (version 0.4.0). Full
+Status: **implemented 2026-10-20, committed on branch
+`add_jittered_inits_and_reproducibility`** (version 0.4.0; not merged). Full
 suite 739 pass / 0 fail; `R CMD check` 0 errors, the 2 pre-existing warnings,
-0 notes. Not verified by execution: `runNimble()`'s own parent loop (needs GNU
-`parallel`), so E1's wait and E2's cap are checked statically - first thing to
-exercise on the Linux server.
+0 notes. Not verified by execution here: `runNimble()`'s own parent loop
+(needs GNU `parallel`), so the manual-mode cap is checked statically. Next step: run
+`smoke-test/runNimble_smoke_test.R` on the Linux server against a separate
+library install of the branch, then merge.
 Target version: 0.4.0 (non-breaking, one flagged exception - see Decision 1).
 Version on `main` before this work: 0.3.1.
 
@@ -145,24 +147,15 @@ Appended after the existing elements of every `mod <- list(...)` in
 - Single inits + `seed = NULL`: **no new elements** - existing calls' saved
   structure is unchanged.
 
-## Decision 5 (E) - making the gathered block count deterministic
+## Decision 5 - making the gathered block count deterministic
 
-Root cause of the remaining non-reproducibility: how many blocks exist when
-the parent gathers can depend on timing, and that count feeds proportional
-burn-in, `chain.length.now` and the `max.samples.saved` subsample.
+How many blocks exist when the parent gathers feeds proportional burn-in,
+`chain.length.now` and the `max.samples.saved` subsample, so it has to be the
+same on every run. Automated mode guarantees this: before each convergence
+check, every chain stops at the same block count and the parent waits for all
+of them to report `STOP`. Manual mode needs the cap below.
 
-**E1 - automated mode, absolute burn-in warm-up (applies always).** Today the
-`nb > 1` warm-up loop writes `RESUME`, sleeps 60 s and re-counts without
-waiting for chains to finish; repeated `RESUME`s can give chains different
-targets, and the first check gathers mid-run. Fix: after writing `RESUME`,
-wait (polling, with `check_workers_alive()`) until every chain reports
-`STOP`, then re-count. Each `RESUME` then adds exactly `check.freq` blocks to
-every chain. A race fix, not a behaviour change in substance - its outcome is
-one the current code can already produce - so it applies with or without a
-seed. Parent gains a `read_state()` (retrying read, mirroring the worker's)
-and a `wait_for_all_stop()` helper.
-
-**E2 - manual mode (applies only when `seed` is supplied).** Compute up front
+**Manual mode (applies only when `seed` is supplied).** Compute up front
 `nblks.cap` = the smallest block count satisfying the existing stopping rule
 `(ni * n - nb.now(n)) >= max.samples.saved * nt` (helper `minGatherBlocks()`,
 using the same expression as the loop). In the polling loop, once the shortest
@@ -181,7 +174,7 @@ With a seed: identical saved model object given identical model/data/
 constants/inits, `nc`, `ni`, `nb`, `nt`, `nt2`, `parameters`/`parameters2`,
 `SamplerSourcePath`, `check.freq`, `max.tries`, `max.samples.saved`,
 `Rht.required`, `neff.required`, `par.*`, and the same R / NIMBLE / compiler /
-platform. Both modes (after E1/E2). Not guaranteed across machines or package
+platform. Both modes (manual mode via the cap). Not guaranteed across machines or package
 versions. Without a seed: unchanged (not reproducible).
 
 ## Backward compatibility (explicit)
@@ -189,9 +182,8 @@ versions. Without a seed: unchanged (not reproducible).
 Single inits + `seed = NULL`: identical values reach `nimbleModel()`; no RNG
 calls added; saved model object unchanged. Internal-only differences:
 `ModRunScript.R` gains the lines above; `NimbleObjects.RData` gains
-`inits.per.chain` (FALSE) and `rng.streams` (NULL). Two behaviour changes,
-both flagged in NEWS.md: the list-valued-inits guard (Decision 1), and E1's
-synchronised warm-up (automated mode with `check.freq <= floor(nb / ni)`).
+`inits.per.chain` (FALSE) and `rng.streams` (NULL). One behaviour change,
+flagged in NEWS.md: the list-valued-inits guard (Decision 1).
 
 ## Files to change
 
@@ -202,7 +194,7 @@ synchronised warm-up (automated mode with `check.freq <= floor(nb / ni)`).
   prep after existing checks, after `require(nimble)`, before `dump.path` is
   wiped (keeps `test-runNimble-nt2-validation.R`'s lazy-evaluation tests
   valid); `save(list = ...)` adds `inits.per.chain`, `rng.streams`; worker
-  lines; provenance elements in all `mod <- list(...)` sites; E1; E2.
+  lines; provenance elements in all `mod <- list(...)` sites; manual-mode cap.
 - `R/countNimbleBlocks.R`, `R/gatherNimble.R`, `R/gatherNimble2.R`:
   `max.nblks = NULL` pass-through.
 - `R/runNimbleBlock.R`: no change.
@@ -233,8 +225,7 @@ synchronised warm-up (automated mode with `check.freq <= floor(nb / ni)`).
   `max.nblks` caps blocks; `NULL` unchanged.
 - `test-worker-script.R` (update): saved-symbol list incl. new objects; seed
   install and inits selection inside `tryCatch` and before
-  `source(model.path)` / first `runNimbleBlock()`; E1 structure (warm-up waits
-  for all `STOP`, no bare `Sys.sleep(60)` re-count); E2 structure.
+  `source(model.path)` / first `runNimbleBlock()`; manual-mode cap structure.
 - Reproducibility integration test (new, gated by `MANAGENIMBLE_TEST_NIMBLE`):
   runs the **real generated `ModRunScript.R`** in `processx` subprocesses
   (2 chains, automated mode, `check.freq = 2` -> 2 blocks incl. a continuation

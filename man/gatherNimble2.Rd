@@ -6,7 +6,7 @@
 \description{
   Internal function called by \code{\link{runNimble}} to gather the second monitor set (\code{parameters2}/\code{monitors2}) from the block dumps written by \code{\link{runNimbleBlock}}. Companion to \code{\link{gatherNimble}}, which gathers the primary set. Not exported; called via \code{manageNimble:::gatherNimble2}.
 
-  Its kept rows are derived directly from \code{\link{gatherNimble}}'s own selection: a row is kept here if and only if its absolute NIMBLE iteration is in \code{retained.iters}, the exact set \code{gatherNimble} actually retained for the primary set (after burn-in and any \code{max.samples.saved}-driven subsample). Because \code{nt2} must be a positive integer multiple of \code{base.thin} (validated), every \code{nt2}-spaced iteration is guaranteed to also be a \code{base.thin}-spaced iteration, so this intersection is exact, not a resampling. This guarantees two properties together: the ratio of kept second-set rows to kept primary-set rows is always \code{nt2 / base.thin}, regardless of how many retry blocks a chain needed; and every kept row's \code{(chn, iter)} is an explicit, verifiable join key back to the corresponding primary-set row.
+  Its kept rows come from \code{\link{gatherNimble}}'s own selection: a row is kept here if and only if its absolute NIMBLE iteration is in \code{retained.iters}, the exact set \code{gatherNimble} actually retained for the primary set (after burn-in and any \code{max.samples.saved}-driven subsample). Because \code{nt2} must be a positive integer multiple of \code{base.thin} (validated), every \code{nt2}-spaced iteration is guaranteed to also be a \code{base.thin}-spaced iteration, so this intersection is exact. This guarantees two properties together: the ratio of kept second-set rows to kept primary-set rows is always \code{nt2 / base.thin}, regardless of how many retry blocks a chain needed; and every kept row's \code{(chn, iter)} is an explicit, verifiable join key back to the corresponding primary-set row.
 
   Chains are stacked into a single matrix; chain identity is not preserved there, because this monitor set is intended for post hoc calculations over the posterior rather than for convergence diagnostics - but the returned \code{iter.key} carries chain identity (and iteration) back for any caller that needs it.
 
@@ -34,11 +34,7 @@
 \author{
   Quresh S. Latif, Bird Conservancy of the Rockies.
 
-  This function was originally written by Claude (Anthropic) in a prior session, and
-  subsequently revised further with Claude's assistance during a full code review and
-  in follow-up bug fixes, including deriving its selection directly from
-  \code{gatherNimble}'s own retained-iteration set rather than sampling independently;
-  see \code{NEWS.md} for what changed.
+  Written with assistance from Claude (Anthropic); see \code{NEWS.md}.
 }
 \keyword{internal}
 \keyword{nimble}

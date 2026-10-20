@@ -47,7 +47,7 @@ test_that("ambiguous or malformed inits are errors", {
 
 test_that("GUARD: list-valued elements in an inits list are an error, not silently ignored", {
   # nimbleModel() quietly ignores inits names it doesn't recognise, list-valued
-  # ones included, so list(chain1 = ..., chain2 = ...) would otherwise run with
+  # ones included, so NIMBLE would run list(chain1 = ..., chain2 = ...) with
   # every initial value discarded.
   expect_error(classifyInits(list(chain1 = list(mu = 0), chain2 = list(mu = 1)), nc = 2),
                "list-valued element\\(s\\): chain1, chain2")

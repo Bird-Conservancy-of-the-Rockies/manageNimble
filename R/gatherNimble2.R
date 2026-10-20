@@ -3,19 +3,19 @@ gatherNimble2 <- function(read.path, burnin, ni.block, nt2 = 1, base.thin,
   # Gather the second monitor set (samp2) from the block dumps written by
   # runNimbleBlock(). Companion to gatherNimble(), which gathers the primary set.
   #
-  # The kept rows are derived directly from gatherNimble()'s own selection
-  # (retained.iters - the exact absolute NIMBLE iteration numbers it retained
-  # for the primary set, see gatherNimble()'s own comments) rather than
-  # sampled independently: a row is kept here iff its absolute iteration is in
-  # retained.iters. Since nt2 must be a positive integer multiple of base.thin
-  # (validated below), every nt2-spaced iteration is guaranteed to also be an
-  # base.thin-spaced iteration - i.e. a candidate member of the primary set's
-  # full (pre-cap) retained-iteration sequence - so this intersection is exact,
-  # not a resampling. This guarantees two properties together: the ratio of
-  # kept second-set rows to kept primary-set rows is always nt2/base.thin
-  # regardless of how many retry blocks a run needed (retained.iters already
-  # reflects whatever burn-in trim and max.samples.saved-driven subsample
-  # gatherNimble() actually applied), and every kept row's (chn, iter) is an
+  # The kept rows come from gatherNimble()'s own selection (retained.iters -
+  # the exact absolute NIMBLE iteration numbers it retained for the primary
+  # set, see gatherNimble()'s own comments): a row is kept here iff its
+  # absolute iteration is in retained.iters. Since nt2 must be a positive
+  # integer multiple of base.thin (validated below), every nt2-spaced iteration
+  # is guaranteed to also be a base.thin-spaced iteration - i.e. a candidate
+  # member of the primary set's full (pre-cap) retained-iteration sequence - so
+  # this intersection is exact. This guarantees two properties together: the
+  # ratio of kept second-set rows to kept primary-set rows is always
+  # nt2/base.thin regardless of how many retry blocks a run needed
+  # (retained.iters already reflects whatever burn-in trim and
+  # max.samples.saved-driven subsample gatherNimble() actually applied), and
+  # every kept row's (chn, iter) is an
   # explicit, verifiable join key back to the corresponding primary-set row -
   # see the returned iter.key.
   #
@@ -49,7 +49,7 @@ gatherNimble2 <- function(read.path, burnin, ni.block, nt2 = 1, base.thin,
     blks <- unique(m[m[, "chn"] == s, "blk"])
     lst <- lapply(blks, FUN = function(b) {
       fl <- paste0(read.path, "/", rownames(m)[m[, "chn"] == s & m[, "blk"] == b])
-      samp2 <- NULL          # Stays NULL if the dump predates monitors2 support
+      samp2 <- NULL          # Stays NULL if the dump holds no second monitor set
       load(file = fl)        # Brings in samp and, if present, samp2
       if(is.null(samp2)) {
         rm(samp); gc(verbose = FALSE)
@@ -85,9 +85,9 @@ gatherNimble2 <- function(read.path, burnin, ni.block, nt2 = 1, base.thin,
     return(NULL)
   }
 
-  # A chain contributing fewer draws than the others usually means one of its
-  # block dumps predates parameters2, or lacks a second set for some other
-  # reason - every chain draws from the identical retained.iters target set, so
+  # A chain contributing fewer draws than the others means one of its block
+  # dumps lacks a second monitor set - every chain draws from the identical
+  # retained.iters target set, so
   # under normal operation (every block's samp2 present) all chains contribute
   # exactly the same count. Since chain identity isn't kept in `out`, this would
   # otherwise silently weight chains unequally in any downstream calculation.

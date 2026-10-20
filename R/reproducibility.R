@@ -35,9 +35,9 @@ restoreRNGState <- function(state) {
 }
 
 # One L'Ecuyer-CMRG stream per chain, derived from `seed`. Streams from
-# nextRNGStream() are guaranteed non-overlapping, unlike set.seed(seed + chn),
-# whose seeds also collide across runs (seed 1/chain 2 == seed 2/chain 1).
-# Leaves the session's RNG kind and state exactly as it found them.
+# nextRNGStream() are guaranteed non-overlapping, and no chain of one seed
+# shares a stream with any chain of another. Leaves the session's RNG kind and
+# state exactly as it found them.
 deriveChainStreams <- function(seed, nc) {
   state <- saveRNGState()
   on.exit(restoreRNGState(state), add = TRUE)
@@ -56,7 +56,7 @@ deriveChainStreams <- function(seed, nc) {
 # elements. nimbleModel() silently ignores inits names it doesn't recognise,
 # list-valued ones included, so a nested list here is almost certainly a
 # per-chain list passed in the wrong shape - e.g. list(chain1 = ..., chain2 =
-# ...) - which would otherwise run with every inits value quietly discarded.
+# ...) - which NIMBLE would run with every initial value discarded.
 checkChainInits <- function(x, what) {
   if(!is.list(x))
     stop(what, " must be a named list of initial values, not ",
@@ -78,13 +78,13 @@ checkChainInits <- function(x, what) {
 }
 
 # How runNimble() reads `inits` - a rule on the `names` attribute, which NIMBLE
-# already requires of a single inits list, not a guess from element contents:
+# already requires of a single inits list:
 #   function                                -> "function" (called once per chain)
 #   list with no names, length > 0         -> "per.chain" (one inits list per chain)
 #   list fully named, list(), or non-list  -> "single" (passed through unchanged)
 #   list with some names empty             -> error
-# Non-list values are passed through as "single" rather than rejected, so no
-# call that NIMBLE itself accepts starts failing here.
+# Non-list values are passed through as "single", leaving NIMBLE to accept or
+# reject them.
 classifyInits <- function(inits, nc) {
   if(is.function(inits)) return("function")
   if(!is.list(inits) || length(inits) == 0) return("single")
@@ -107,8 +107,8 @@ classifyInits <- function(inits, nc) {
 }
 
 # Resolves `inits` into what the workers receive:
-#   inits     - saved to NimbleObjects.RData as `inits` (the original object for
-#               "single"; a list of nc inits lists otherwise)
+#   inits     - saved to NimbleObjects.RData as `inits` (the object as passed,
+#               for "single"; a list of nc inits lists otherwise)
 #   per.chain - saved as `inits.per.chain`; each worker then keeps only
 #               inits[[chn]]
 #   used      - the per-chain inits actually used, recorded as mod$inits;

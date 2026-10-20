@@ -26,9 +26,9 @@ gatherNimble <- function(read.path, burnin, ni.block, base.thin, max.samples.sav
   #
   # Flooring here, rather than leaving burnin.needed fractional, is essential:
   # row.start below is seeded from it and nrow(samp) (always a whole number,
-  # checked at line ~64) is added to it once per block, so an unflored
-  # fractional burnin.needed makes row.start, and therefore every element of
-  # block.rows, fractional for the rest of the chain. block.rows %in% ind.sav
+  # checked against rows.per.block below) is added to it once per block, so a
+  # fractional burnin.needed would make row.start, and therefore every element
+  # of block.rows, fractional for the rest of the chain. block.rows %in% ind.sav
   # then compares fractional values against ind.sav's integers and never
   # matches, so `keep` is empty for every block, `pieces` ends up entirely
   # empty, do.call(rbind, list()) returns NULL, and as.mcmc(NULL) errors -
@@ -74,19 +74,17 @@ gatherNimble <- function(read.path, burnin, ni.block, base.thin, max.samples.sav
   # chains are already trimmed to the same block count above, so this doesn't
   # vary by chain. Converting it to ABSOLUTE NIMBLE iteration numbers gives an
   # explicit, verifiable key for exactly which draws survived (burn-in trim and
-  # any max.samples.saved-driven subsample together) - needed so gatherNimble2()
-  # can derive the second monitor set's kept rows from this same selection,
-  # rather than sampling independently (see gatherNimble2()'s own comments).
+  # any max.samples.saved-driven subsample together) - gatherNimble2() selects
+  # the second monitor set's rows from this same set (see its own comments).
   #
   # Local row r's absolute iteration: burnin.realized accounts for whole
   # dropped blocks; (burnin.needed + r) is r's position counting from the start
   # of the first retained block (burnin.needed local rows before r=1 were
   # trimmed there); multiplying by base.thin converts that draw count back to
   # an iteration number, since each successive retained draw advances the
-  # iteration index by base.thin. Cross-checked by execution against every
-  # existing test in test-gatherNimble.R, including the fractional-burnin.needed
-  # cases and a max.samples.saved cap together, using the fixture's own
-  # true-iteration data column as ground truth.
+  # iteration index by base.thin. test-gatherNimble.R checks this against each
+  # row's true iteration, including fractional burnin.needed and a
+  # max.samples.saved cap.
   retained.iters <- burnin.realized + (burnin.needed + ind.sav) * base.thin
 
   # Per-row (chn, iter) key aligned with as.matrix(out)'s row order: chain-major
@@ -101,7 +99,7 @@ gatherNimble <- function(read.path, burnin, ni.block, base.thin, max.samples.sav
   # the systematic subsample selected above), discarding the rest before the
   # next block is loaded. Peak memory therefore never holds more than one raw
   # block plus the shrinking accumulator, rather than every retained block for
-  # every chain at once (finding F31).
+  # every chain at once.
   gathr <- lapply(seq_along(chns), FUN = function(ci) {
     s <- chns[ci]
     blks <- blks.per.chain[[ci]]
@@ -119,7 +117,7 @@ gatherNimble <- function(read.path, burnin, ni.block, base.thin, max.samples.sav
       # R's generational GC does not necessarily reclaim `samp` (one full block)
       # right away, so without forcing it here garbage from earlier blocks in
       # this loop can pile up and peak memory ends up close to holding every
-      # block at once anyway - exactly what this rewrite exists to avoid.
+      # block at once anyway - exactly what loading one block at a time avoids.
       rm(samp); gc(verbose = FALSE)
       out
     })

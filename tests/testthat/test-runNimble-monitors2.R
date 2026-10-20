@@ -31,10 +31,9 @@ toy <- function() {
 new_tmp <- function() {
   # tempfile() rather than sample(letters, ...): toy() below calls set.seed(42),
   # so a seed-derived name would collide across test_that() blocks that draw the
-  # same number of random values before calling this - which they do here, and
-  # did collide in practice (silently reusing a previous test's leftover
-  # directory) before this fix. tempfile()'s own uniqueness is unaffected by
-  # set.seed().
+  # same number of random values before calling this, which they do here,
+  # silently reusing a previous test's leftover directory. tempfile()'s own
+  # uniqueness is unaffected by set.seed().
   d <- tempfile(pattern = "cm2")
   dir.create(d, recursive = TRUE, showWarnings = FALSE)
   d

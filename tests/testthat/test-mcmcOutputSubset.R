@@ -51,8 +51,8 @@ test_that("chain structure is preserved", {
 })
 
 # ---------------------------------------------------------------------------
-# Design characteristics that remain by choice (not bugs) - see the matching
-# section in test-checkNimble.R for the rescue mechanism (par.dontign, F2)
+# Intentional design characteristics (see test-checkNimble.R for the
+# par.dontign rescue) and edge cases
 # ---------------------------------------------------------------------------
 
 test_that("par.drop patterns are unanchored by design, and over-match without par.dontign", {
@@ -67,9 +67,6 @@ test_that("par.drop patterns are unanchored by design, and over-match without pa
                              `psi[1]` = "good", alpha = "good"), n = 100)
 
   expect_equal(cols(mcmcOutputSubset(mo, par.drop = "p")), c("psi[1]", "alpha"))
-
-  # what an anchored match would give instead, for contrast:
-  # c("beta.p[1]", "mu.p", "psi[1]", "alpha")
 })
 
 test_that("par.keep is over-matched the same way, by the same design", {
@@ -79,10 +76,10 @@ test_that("par.keep is over-matched the same way, by the same design", {
                   c("p[1]", "beta.p[1]", "mu.p"))
 })
 
-test_that("FIXED (F17): a single-chain object can now be subset", {
-  # m <- chn.iter * matrix(c(0, rep(1:(nc-1), each = 2), nc), nrow = 2) + c(1,0)
-  # For nc = 1, 1:(nc-1) was 1:0 = c(1, 0), producing a 2x3 index matrix with a
-  # descending range. nc == 1 is now handled directly.
+test_that("a single-chain object can be subset", {
+  # The chain-boundary index matrix is built from 1:(nc-1), which for nc = 1 is
+  # 1:0 = c(1, 0), a descending range; mcmcOutputSubset() handles nc == 1
+  # directly.
   mo <- make_mcmcOutput(list(`a[1]` = "good", `b[1]` = "good"), n = 100, nchain = 1)
   expect_equal(cols(mcmcOutputSubset(mo, par.drop = "a")), "b[1]")
 
@@ -91,21 +88,20 @@ test_that("FIXED (F17): a single-chain object can now be subset", {
     par.drop = "a"))
 })
 
-test_that("FIXED (F18): par.keep matching nothing gives a diagnosable message", {
-  # A typo'd or absent parameter name used to yield zero columns and an
-  # obscure "subscript out of bounds", rather than naming the problem.
+test_that("par.keep matching nothing gives a diagnosable message", {
+  # A typo'd or absent parameter name is named in the error, rather than
+  # surfacing as zero columns and an obscure "subscript out of bounds".
   mo <- make_mcmcOutput(list(`a[1]` = "good", `b[1]` = "good"), n = 100)
   expect_error(mcmcOutputSubset(mo, par.keep = "typo"), "par.keep matched no columns")
 
   # an empty par.keep (as opposed to a non-empty one matching nothing) is
-  # still valid - it's the same as supplying par.drop alone.
+  # valid - it's the same as supplying par.drop alone.
   expect_no_error(mcmcOutputSubset(mo, par.keep = character(0), par.drop = "a"))
 })
 
-test_that("column order is permuted by par.keep (documented behaviour, not a bug)", {
-  # Kept families are moved to the front, so summary() row order no longer
-  # matches the original parameter order. Not one of the findings selected for
-  # a fix; documented here so a future change to this is deliberate.
+test_that("column order is permuted by par.keep (documented behaviour)", {
+  # Kept families are moved to the front, so summary() rows don't follow the
+  # input parameter order. Pinned here so a change to this is deliberate.
   mo <- make_mcmcOutput(list(`a[1]` = "good", `b[1]` = "good",
                              `c[1]` = "good", d = "good"), n = 100)
   expect_equal(cols(mcmcOutputSubset(mo, par.keep = "d", par.drop = "a")),

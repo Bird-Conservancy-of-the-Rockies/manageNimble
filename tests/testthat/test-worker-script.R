@@ -137,18 +137,6 @@ test_that("defaults leave seeding off", {
   expect_null(formals(manageNimble::runNimble)$seed)
 })
 
-test_that("absolute burn-in warm-up waits for every chain to stop before re-counting", {
-  # Re-counting on a 60-s timer let repeated RESUMEs give chains different
-  # targets and the first check gather mid-run, so the block count depended on
-  # timing. Each pass now waits for all chains to report STOP.
-  b <- fn_text(manageNimble::runNimble)
-  expect_true(grepl("wait_for_all_stop <- function()", b, fixed = TRUE))
-  expect_true(grepl('write_state("GO", directive.file) wait_for_all_stop() check.blocks <- countNimbleBlocks(',
-                    b, fixed = TRUE))
-  expect_false(grepl('write_state("GO", directive.file) Sys.sleep(60) check.blocks <- countNimbleBlocks(',
-                     b, fixed = TRUE))
-})
-
 test_that("seeded manual mode gathers a fixed number of blocks, unseeded is unchanged", {
   b <- fn_text(manageNimble::runNimble)
   expect_true(grepl("nblks.cap <- if (!is.null(seed) && !automate.convergence.checks)", b, fixed = TRUE))

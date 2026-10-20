@@ -4,7 +4,7 @@ Two new, opt-in capabilities in `runNimble()`: chain-specific initial values
 and reproducible sampling. **Non-breaking**: a call with a single inits list and
 no `seed` behaves exactly as before - the same values reach `nimbleModel()`, no
 random numbers are drawn or seeded anywhere new, and the saved model object
-has the same elements. Two narrow behaviour changes are listed under
+has the same elements. One narrow behaviour change is described under
 "Backward compatibility" below.
 
 ## New: chain-specific initial values (`inits`)
@@ -58,41 +58,31 @@ different seed or chain gave different draws.
 `seed` is validated up front: `NULL`, or a single, finite whole number within
 integer range.
 
-## Fixed: the number of blocks gathered could depend on timing
+## Seeded manual-mode runs gather a fixed number of blocks
 
 Reproducing the saved object also needs the same number of blocks gathered
-every time. Two code paths let it vary with how fast chains ran relative to
-the parent's polling:
-- **Automated mode, absolute burn-in (`nb > 1`) warm-up** - only when the
-  first `check.freq` blocks don't get past burn-in
-  (`check.freq <= floor(nb / ni)`). The parent wrote `RESUME`, slept 60 s and
-  re-counted without waiting for chains to finish. Repeated `RESUME`s could
-  give chains different targets, and the first convergence check gathered
-  while chains were still running. It now waits for every chain to report
-  `STOP` before re-counting, so each `RESUME` adds exactly `check.freq` blocks
-  per chain. **Applies to all runs, seeded or not** - it's a race fix, and its
-  outcome is one the old code could already produce.
-- **Manual mode (`check.freq = NULL`)**. Workers sample until the parent's
-  5-minute check sees enough draws, so they overshoot by however many blocks
-  fit in the rest of the sleep. The block count feeds proportional burn-in and
-  the `max.samples.saved` subsample. **With a seed only**, the run now gathers
-  exactly the smallest number of blocks that satisfies the existing stopping
-  rule, and ignores the rest. Unseeded manual-mode runs gather everything
-  available, exactly as before - changing that would change existing results.
+every time. Automated mode already guarantees this: before every convergence
+check, each chain stops at the same block count. In **manual mode
+(`check.freq = NULL`)** it depended on timing:
+workers sample until the parent's 5-minute check sees enough draws, so they
+overshoot by however many blocks fit in the rest of the sleep, and the block
+count feeds proportional burn-in and the `max.samples.saved` subsample.
+**With a seed only**, the run now gathers exactly the smallest number of
+blocks that satisfies the existing stopping rule, and ignores the rest.
+Unseeded manual-mode runs gather everything available, exactly as before -
+changing that would change existing results.
 
 Plumbing: `countNimbleBlocks()`, `gatherNimble()` and `gatherNimble2()` take a
 new optional `max.nblks` (default `NULL` = every block, as before).
 
 ## Backward compatibility
 
-Unchanged for a single inits list and no seed, except:
-- **A single inits list containing a list-valued element is now an error.**
-  `nimbleModel()` silently ignores inits names it doesn't recognise -
-  list-valued ones included (verified) - so a per-chain list passed with names,
-  `list(chain1 = ..., chain2 = ...)`, used to run with every initial value
-  quietly discarded. It now stops with an explanation.
-- **The automated-mode warm-up synchronisation above**, for runs with
-  `check.freq <= floor(nb / ni)`.
+Unchanged for a single inits list and no seed, except: **a single inits list
+containing a list-valued element is now an error.** `nimbleModel()` silently
+ignores inits names it doesn't recognise - list-valued ones included
+(verified) - so a per-chain list passed with names,
+`list(chain1 = ..., chain2 = ...)`, used to run with every initial value
+quietly discarded. It now stops with an explanation.
 
 Internal-only differences: `ModRunScript.R` gains the seed-install and inits-
 selection lines, and `NimbleObjects.RData` gains `inits.per.chain` and
@@ -130,15 +120,16 @@ reproducibility", and corrects two stale items: it still listed the removed
   draw-identity assertions fail, so the test does discriminate.
 - `test-worker-script.R`: new saved objects; seed install and inits
   selection come before anything that draws random numbers; the worker's
-  `RNGkind()` matches the parent's; the warm-up waits for `STOP`; seeded
-  manual mode caps the gathered blocks.
+  `RNGkind()` matches the parent's; seeded manual mode caps the gathered
+  blocks.
 - `max.nblks` coverage in the `countNimbleBlocks`/`gatherNimble`/
   `gatherNimble2` tests.
 
-Not covered by execution: `runNimble()`'s own parent loop can't run on Windows
-(GNU parallel), so the warm-up wait and the manual-mode cap inside it are
-tested statically. The pieces they rely on (`max.nblks`, `minGatherBlocks()`)
-are tested by execution.
+Not covered by execution here: `runNimble()`'s own parent loop can't run on
+Windows (GNU parallel), so the manual-mode cap inside it is tested statically;
+the pieces it relies on (`max.nblks`, `minGatherBlocks()`) are tested by
+execution. `smoke-test/runNimble_smoke_test.R` runs the whole thing end to end
+on a Linux server.
 
 # manageNimble 0.3.1
 

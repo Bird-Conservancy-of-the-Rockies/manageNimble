@@ -1,22 +1,8 @@
 # Shared fixtures for the manageNimble test suite.
 #
-# CONVENTION USED THROUGHOUT THIS SUITE
-# -------------------------------------
-# Tests fall into three groups, distinguishable by their test_that() label:
-#
-#   * Plain behavioural tests - assert what the function is supposed to do.
-#     Should stay green forever.
-#
-#   * "FIXED (Fn)" - regression tests for a specific code review finding.
-#     During the review these were written as "CHARACTERISES BUG n" tests
-#     asserting the *current, wrong* behaviour, so the suite passed against
-#     unfixed code; each was flipped to assert the corrected behaviour once
-#     its fix landed. See NEWS.md for the full write-up of every finding.
-#
-#   * Tests documenting an intentional design characteristic that was
-#     reviewed and deliberately NOT changed (e.g. par.ignore's unanchored
-#     substring matching) - these exist so a future change to that behaviour
-#     is a deliberate decision, not an accident.
+# Every test asserts what the code does. Some pin down an intentional design
+# characteristic (e.g. par.ignore's unanchored substring matching) so that
+# changing it is a deliberate decision, not an accident.
 #
 # Nothing here requires the Linux server, GNU parallel, or lsof.
 
@@ -26,13 +12,13 @@ suppressPackageStartupMessages({
   library(stringr)
 })
 
-# countNimbleBlocks/gatherNimble/gatherNimble2 are internal (not exported) as
-# of the NAMESPACE tightening in this review - runNimble() is the documented
-# entry point; those three are its implementation details (see NEWS.md). Under
-# devtools::load_all() (the normal dev loop) they're visible by bare name
-# already; under a real install + library(manageNimble) (what R CMD check's
-# test_check() does) only ::: reaches them. This alias keeps every test in the
-# suite working under both, without qualifying dozens of call sites.
+# countNimbleBlocks/gatherNimble/gatherNimble2 are internal (not exported) -
+# runNimble() is the documented entry point; those three are its
+# implementation details. Under devtools::load_all() (the normal dev loop)
+# they're visible by bare name already; under a real install +
+# library(manageNimble) (what R CMD check's test_check() does) only :::
+# reaches them. This alias keeps every test in the suite working under both,
+# without qualifying dozens of call sites.
 if (!exists("countNimbleBlocks", mode = "function")) {
   countNimbleBlocks <- manageNimble:::countNimbleBlocks
   gatherNimble <- manageNimble:::gatherNimble

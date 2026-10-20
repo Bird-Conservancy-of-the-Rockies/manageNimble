@@ -6,7 +6,7 @@
 \description{
   Internal function called by \code{\link{runNimble}} to gather and organize NIMBLE samples (the primary monitor set) into an mcmcOutput object. Not exported; called via \code{manageNimble:::gatherNimble}.
 
-  Sample blocks are loaded one at a time and immediately reduced to the rows that will actually be retained (after burn-in and any \code{max.samples.saved} subsampling), rather than loading every retained block before thinning - peak memory therefore scales with \code{max.samples.saved}, not with the total amount of data sampled so far.
+  Sample blocks are loaded one at a time and immediately reduced to the rows that will actually be retained (after burn-in and any \code{max.samples.saved} subsampling), so peak memory scales with \code{max.samples.saved}, not with the total amount of data sampled so far.
 }
 \usage{
   gatherNimble(read.path, burnin, ni.block, base.thin, max.samples.saved,
@@ -25,15 +25,14 @@
   \item{out}{MCMC samples organized as an 'mcmcOutput' object.}
   \item{nblks}{the number of sampling blocks}
   \item{additional.thin.rate}{Any additional thinning rate if max.samples.saved is specified. Set to 1 if max.samples.saved is NULL.}
-  \item{retained.iters}{Sorted vector of the absolute NIMBLE iteration numbers actually retained (after burn-in and any \code{max.samples.saved}-driven subsample), identical across chains. Threaded into \code{\link{gatherNimble2}} so the second monitor set's kept rows can be derived directly from this same selection rather than sampled independently.}
+  \item{retained.iters}{Sorted vector of the absolute NIMBLE iteration numbers actually retained (after burn-in and any \code{max.samples.saved}-driven subsample), identical across chains. Passed to \code{\link{gatherNimble2}}, which selects the second monitor set's rows from this same set.}
   \item{iter.key}{A \code{data.frame(chn, iter)} with one row per retained draw, aligned with \code{as.matrix(out)}'s row order (chain-major, ascending iteration within chain) - an explicit, joinable key for which chain and absolute iteration each row came from.}
 }
 
 \author{
   Bryan L. Nuse and Quresh S. Latif, Bird Conservancy of the Rockies.
 
-  Substantially revised with Claude (Anthropic) assistance during a full code review and in
-  follow-up bug fixes (including a memory-usage redesign); see \code{NEWS.md} for what changed.
+  Developed in part with assistance from Claude (Anthropic); see \code{NEWS.md}.
 }
 \keyword{internal}
 \keyword{nimble}

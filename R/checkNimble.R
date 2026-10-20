@@ -4,9 +4,8 @@ checkNimble <- function(mcmcOutput, Rht.required = 1.1, neff.required = 100,
                         spit.summary = FALSE, mod.nam = "mod", directive.file = "") {
   # par.dontign is a rescue list for parameters that par.ignore's substring
   # matching would otherwise sweep up unintentionally (see man/checkNimble.Rd).
-  # It must be applied whenever par.ignore is, not only when par.fuzzy.track is
-  # also supplied - previously it was silently a no-op in the (common)
-  # par.ignore-only case.
+  # It is applied whenever par.ignore is, whether or not par.fuzzy.track is
+  # also supplied.
   if(length(par.ignore) > 0) {
     mcmcOutput <- mcmcOutputSubset(mcmcOutput,
                                    par.keep = c(par.dontign, par.fuzzy.track),
@@ -37,11 +36,10 @@ checkNimble <- function(mcmcOutput, Rht.required = 1.1, neff.required = 100,
          "strictly, or the run can never be declared converged.")
 
   # NA in either Rhat or n.eff is fatal, for both focal and fuzzy-tracked
-  # parameters. Without this, max()/min() silently propagate the NA into
-  # `result`, which crashes downstream `if(!mod.check.result)` checks in
-  # runNimble() ("missing value where TRUE/FALSE needed") - and before that
-  # crash, a parameter that was never actually sampled would not have been
-  # caught at all.
+  # parameters. Without this check, max()/min() silently propagate the NA into
+  # `result`, which crashes runNimble()'s downstream `if(!mod.check.result)`
+  # ("missing value where TRUE/FALSE needed") without naming the parameter
+  # that was never actually sampled.
   if(any(is.na(s.focal$Rhat)) | any(is.na(s.focal$n.eff))) {
     write.csv(s.focal %>% filter(is.na(Rhat) | is.na(n.eff) | Rhat %in% c(Inf, -Inf)),
               paste0("Bad_pars_", mod.nam, ".csv"))

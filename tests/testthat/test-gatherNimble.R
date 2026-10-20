@@ -1,9 +1,9 @@
 # Every dump cell records its true global iteration index, so the assertions
 # below pin down exactly which iterations survive burn-in and thinning.
 #
-# gatherNimble() no longer shells out to lsof at all (finding F22 - blocks are
-# now written via temp-file + atomic rename, so a file visible under its final
-# name is always complete). These tests don't need lsof on PATH.
+# Blocks are written via temp file + atomic rename, so a file visible under its
+# final name is always complete; gatherNimble() needs no lsof or other external
+# tool on the PATH.
 
 test_that("happy path: correct iterations retained, chains aligned", {
   d <- make_dump_dir(list(1:4, 1:4), ni.block = 100)
@@ -24,10 +24,10 @@ test_that("happy path: correct iterations retained, chains aligned", {
 })
 
 test_that("retained.iters / iter.key agree with the fixture's own encoded true iteration values", {
-  # retained.iters/iter.key are gatherNimble()'s new structural correspondence
-  # key (used to thread gatherNimble2()'s selection off of this one - see
-  # test-gatherNimble2.R). Cross-checked here against the fixture's own
-  # independently-encoded "iter" data column, not derived from the same code.
+  # retained.iters/iter.key are gatherNimble()'s correspondence key
+  # (gatherNimble2() selects its rows from retained.iters - see
+  # test-gatherNimble2.R). Checked here against the fixture's own
+  # independently encoded "iter" data column.
   d <- make_dump_dir(list(1:4, 1:4), ni.block = 100)
 
   g <- gatherNimble(d, burnin = 0.5, ni.block = 100, base.thin = 1,
@@ -119,8 +119,7 @@ test_that("uneven chains are truncated before gathering", {
 })
 
 test_that("gatherNimble works with no lsof on PATH at all", {
-  # Regression guard for F22: confirms the lsof dependency is genuinely gone,
-  # not just stubbed out by a test fixture.
+  # Runs with an empty PATH, so no external tool (lsof included) is available.
   withr::local_path(character(0), action = "replace")
   expect_equal(Sys.which("lsof"), c(lsof = ""))
 
@@ -130,15 +129,15 @@ test_that("gatherNimble works with no lsof on PATH at all", {
 })
 
 # ---------------------------------------------------------------------------
-# Regression tests for fixed bugs (see NEWS.md for the full write-up)
+# Error paths and fractional residual burn-in
 # ---------------------------------------------------------------------------
 
-test_that("FIXED (F3): a gapped chain is refused upstream, before gatherNimble ever runs", {
-  # Chain 1 is missing block 4. Previously countNimbleBlocks() relabelled its
-  # block 5 as block 4, silently pairing it against chain 2's genuine block 4
-  # and computing Rhat across chains covering different parts of the run.
-  # countNimbleBlocks() now refuses to renumber (see test-countNimbleBlocks.R),
-  # so gatherNimble() never gets the chance to gather misaligned data.
+test_that("a gapped chain is refused upstream, before gatherNimble gathers anything", {
+  # Chain 1 is missing block 4. Relabelling its block 5 as block 4 would
+  # silently pair it against chain 2's genuine block 4 and compute Rhat across
+  # chains covering different parts of the run; countNimbleBlocks() refuses
+  # instead (see test-countNimbleBlocks.R), so gatherNimble() never gathers
+  # misaligned data.
   d <- make_dump_dir(list(c(1, 2, 3, 5), 1:4), ni.block = 100)
 
   expect_error(gatherNimble(d, burnin = 0.5, ni.block = 100, base.thin = 1,
@@ -146,7 +145,7 @@ test_that("FIXED (F3): a gapped chain is refused upstream, before gatherNimble e
                "missing block dump")
 })
 
-test_that("FIXED (F19): no blocks left after burn-in gives a clear error", {
+test_that("no blocks left after burn-in gives a clear error", {
   d <- make_dump_dir(list(1:2, 1:2), ni.block = 100)
 
   expect_error(gatherNimble(d, burnin = 5000, ni.block = 100, base.thin = 1,
@@ -154,21 +153,15 @@ test_that("FIXED (F19): no blocks left after burn-in gives a clear error", {
                "no blocks remain after burn-in")
 })
 
-test_that("FIXED: fractional burnin.needed no longer crashes gatherNimble() (same root cause as gatherNimble2's fix)", {
-  # burnin.needed <- (burnin - burnin.realized) / base.thin used to feed
-  # straight into row.start <- 1 - burnin.needed, which seeds a fractional
-  # `:` sequence (block.rows) accumulated across every block in the chain.
-  # ind.sav is always integer, so block.rows %in% ind.sav never matched,
-  # `keep` was empty for every block, pieces ended up entirely empty,
-  # do.call(rbind, list()) returned NULL, and as.mcmc(NULL) errored - not a
-  # rare edge case, but the deterministic outcome whenever the residual
-  # burn-in isn't an exact multiple of base.thin. Reproduces the exact
-  # reported values: ni.block = 2010, nb = 0.4, base.thin = 10 (this
-  # project's actual settings), at nblks = 1 (fires on the very first
-  # automated convergence check) and nblks = 7 (a later non-multiple-of-5
-  # case). See countNimbleBlocks()'s own accounting for why: burnin.block
-  # only advances every 2010 iterations, so burnin.needed = residual/10 is
-  # fractional at every block count except exact multiples of 5.
+test_that("a fractional residual burn-in (in draws) is floored, so gathering succeeds", {
+  # (burnin - burnin.realized) / base.thin is generally fractional, and it
+  # seeds row.start, the `:` sequence (block.rows) matched against ind.sav.
+  # gatherNimble() floors it; left fractional, every block.rows value would be
+  # fractional, never match ind.sav's integers, and nothing would be gathered.
+  # Uses ni.block = 2010, nb = 0.4, base.thin = 10, at nblks = 1 (the first
+  # automated convergence check) and nblks = 7: burnin.block only advances
+  # every 2010 iterations, so residual/10 is fractional at every block count
+  # except exact multiples of 5.
   ni.block <- 2010; nb <- 0.4; nt <- 10
 
   # nblks = 1: burnin = 804, burnin.realized = 0, residual = 804,
@@ -197,9 +190,8 @@ test_that("FIXED: fractional burnin.needed no longer crashes gatherNimble() (sam
   expect_equal(min(it7), 5630)
   expect_equal(g7$nblks, 7)
 
-  # nblks = 5 stays the control case: residual is exactly 0 there (an exact
-  # multiple of base.thin), so burnin.needed was already an integer before
-  # this fix and this case is unaffected by it.
+  # nblks = 5 is the control: the residual is exactly 0 there (an exact
+  # multiple of base.thin), so burnin.needed is an integer without flooring.
   d5 <- make_dump_dir(list(1:5, 1:5), ni.block = ni.block, nt = nt)
   g5 <- gatherNimble(d5, burnin = nb, ni.block = ni.block, base.thin = nt,
                      max.samples.saved = NULL)

@@ -9,14 +9,14 @@ runNimble <-
            SamplerSourcePath = NA, delete.blocks = TRUE,
            parameters2 = character(), nt2 = NULL,
            consolidate.monitors2 = TRUE, seed = NULL) {
-  # inits: a single named list (every chain starts from it - the original
-  # form), an unnamed list of nc named lists (one per chain), or a function
+  # inits: a single named list (every chain starts from it), an unnamed list
+  # of nc named lists (one per chain), or a function
   # returning a named list (called here, in the parent, once per chain: f(chn)
   # if it takes an argument, f() otherwise). See classifyInits() for the exact
   # rule. Per-chain and generated inits are saved as one list; each worker
   # keeps only its own element, and the inits used are recorded as mod$inits.
   #
-  # seed: NULL (default) leaves the RNG alone, as before. A single whole number
+  # seed: NULL (default) leaves the RNG alone. A single whole number
   # derives one non-overlapping L'Ecuyer-CMRG stream per chain (and an
   # independent substream for generating that chain's inits); each worker
   # installs its stream before anything else, so draws are reproducible.
@@ -41,19 +41,18 @@ runNimble <-
   # always nt2/nt regardless of how many retry blocks a chain needed, and that
   # every retained second-set row traces back to the specific primary-set row
   # from the same iteration (join iter.key from both sets on c("chn", "iter")).
-  # Defaults to no second set, in which case nothing changes.
+  # Defaults to no second set.
   #
   # consolidate.monitors2: when TRUE (default) and parameters2 is non-empty, the
   # gathered second monitor set is also attached to the saved/returned model
   # object as mod$monitors2, so a single R.utils::loadObject(mod.nam) call (or
   # rtrn.model = TRUE) gives access to both monitor sets together - the
-  # standalone _monitors2.rds file is still written either way. The tradeoff is
-  # memory/load time: loading the primary object now also loads the second
-  # monitor set, which can be large (that's the reason parameters2 exists as a
-  # separate set in the first place). Set to FALSE to keep today's behaviour -
-  # mod gets no monitors2 element, the second set is only ever available via
-  # its own file - e.g. for callers who deliberately want it kept out of the
-  # primary object for memory/load-time reasons. Has no effect when
+  # standalone _monitors2.rds file is written either way. The tradeoff is
+  # memory/load time: loading the primary object then also loads the second
+  # monitor set, which can be large (the reason parameters2 exists as a
+  # separate set). With FALSE, mod gets no monitors2 element and the second set
+  # is available only via its own file - for callers who want it kept out of
+  # the primary object for memory/load-time reasons. Has no effect when
   # parameters2 is empty; mod never gets a monitors2 element in that case.
     if(length(parameters2) > 0 && is.null(nt2)) nt2 <- ni
     if(length(parameters2) == 0) nt2 <- 1
@@ -92,13 +91,13 @@ runNimble <-
     }
 
     # nimble is required (not just imported) because compileNimble()'s C++
-    # interop has been unreliable in the past when the package is only
-    # available via NAMESPACE imports rather than genuinely attached; every
+    # interop is unreliable when the package is only available via NAMESPACE
+    # imports rather than genuinely attached; every
     # other dependency below is resolved through this package's own NAMESPACE
     # imports (see DESCRIPTION's Imports: and NAMESPACE's importFrom()) and
     # needs no require() here.
     require(nimble)
-    if(!is.na(SamplerSourcePath)) { # Included this option for NUTS sampler, which requires HMC
+    if(!is.na(SamplerSourcePath)) { # custom samplers such as NUTS need nimbleHMC
       if(!requireNamespace("nimbleHMC", quietly = TRUE))
         stop("Package 'nimbleHMC' is required when SamplerSourcePath is supplied. ",
              "Install it with install.packages('nimbleHMC').")
@@ -113,15 +112,15 @@ runNimble <-
     chain.inits <- prepareChainInits(inits, nc, rng.streams)
     inits <- chain.inits$inits
     inits.per.chain <- chain.inits$per.chain
-    # Appended to every saved mod; empty (so mod is unchanged) for a single
-    # inits list and no seed.
+    # Appended to every saved mod; empty for a single inits list and no seed,
+    # so mod then holds only its standard elements.
     provenance <- list()
     if(!is.null(seed))
       provenance$rng <- list(seed = seed, kind = RNG_KIND,
                              streams = do.call(rbind, rng.streams))
     if(!is.null(chain.inits$used)) provenance$inits <- chain.inits$used
     # Seeded manual mode gathers exactly this many blocks (see the manual
-    # branch below); NULL leaves every other run as it was.
+    # branch below); NULL otherwise, gathering every block available.
     nblks.cap <- if(!is.null(seed) && !automate.convergence.checks)
       minGatherBlocks(ni, nb, nt, max.samples.saved) else NULL
 
@@ -131,7 +130,7 @@ runNimble <-
     # Coordination files (directive.file, block<c>Status.txt) are read and
     # written by multiple processes with no locking. write_state() writes to a
     # temp file and renames into place, so a reader can never see a truncated
-    # write - the worker script uses the same pattern (finding F26).
+    # write - the worker script uses the same pattern.
     write_state <- function(text, path) {
       tmp <- paste0(path, ".tmp")
       writeLines(text, tmp)
@@ -142,8 +141,8 @@ runNimble <-
     # --- Failure-safety net -------------------------------------------------
     # Preserves worker logs and stops any still-running workers no matter how
     # this function exits (normal return, stop(), or an interrupt). Without
-    # this, an error thrown after workers are launched left them sampling
-    # forever against a directive file nobody would ever update again.
+    # it, an error thrown after workers launch would leave them sampling
+    # forever against a directive file nobody updates.
     proc <- NULL
     copy_logs <- function() {
       log.dir <- paste0(mod.nam, "_logs")
@@ -165,7 +164,7 @@ runNimble <-
     # dump.path/chn<c>_error.log via the worker script's tryCatch wrapper
     # before it exits. Call this at the top of every polling loop so a dead
     # worker is detected and reported immediately instead of leaving the
-    # parent to poll forever (findings F14, F25, F27).
+    # parent to poll forever.
     check_workers_alive <- function() {
       err.files <- list.files(dump.path, pattern = "chn.*_error\\.log$", full.names = TRUE)
       if(length(err.files) > 0)
@@ -180,28 +179,6 @@ runNimble <-
       fl <- fl[str_detect(fl, "mod_chn")]
       if(length(fl) == 0) return(0L)
       length(unique(str_split(fl, "_", simplify = TRUE)[,2]))
-    }
-    # Same retrying read as the worker's own read_state(): a status file caught
-    # mid-rewrite reads as zero lines or an error, never as a state.
-    read_state <- function(path) {
-      x <- try(readLines(path), silent = TRUE)
-      while(inherits(x, "try-error") || length(x) != 1) {
-        Sys.sleep(1)
-        x <- try(readLines(path), silent = TRUE)
-      }
-      x
-    }
-    # Blocks until every chain has finished its current target and reported
-    # STOP. After a RESUME, each chain then has exactly check.freq more blocks,
-    # so block counts never depend on how fast chains happen to run.
-    wait_for_all_stop <- function() {
-      repeat {
-        check_workers_alive()
-        status.chains <- vapply(seq_len(nc), function(cn)
-          read_state(paste0(dump.path, "/block", cn, "Status.txt")), character(1))
-        if(all(status.chains == "STOP")) break
-        Sys.sleep(10)
-      }
     }
 
     if(automate.convergence.checks) {
@@ -220,7 +197,7 @@ runNimble <-
                   "automate.convergence.checks", "directive.file",
                   "parameters2", "nt2", "inits.per.chain", "rng.streams"),
          file = paste0(dump.path, "/NimbleObjects.RData"))
-    #[Create R script for kicking off nimble run here]. Call it "ModRunScript.R"
+    # Worker script, written to dump.path/ModRunScript.R and run once per chain.
     #___________________________________________________________________________#
     writeLines(text = c(
       "require(nimble)",
@@ -232,8 +209,7 @@ runNimble <-
       # read_state()/write_state() mirror the parent's own coordination-file
       # handling: write_state() writes to a temp file and renames into place, so
       # a read can never see a truncated write; read_state() retries a read that
-      # is momentarily empty or mid-rewrite rather than treating it as a state
-      # (finding F26 - the worker previously had no such protection at all).
+      # is momentarily empty or mid-rewrite rather than treating it as a state.
       "read_state <- function(path) {",
         "x <- try(readLines(path), silent = TRUE)",
         "while(inherits(x, 'try-error') || length(x) != 1) {",
@@ -364,14 +340,11 @@ runNimble <-
 
           check.blocks <- countNimbleBlocks(read.path = dump.path, burnin = nb, ni.block = ni)
           if(nb > 1) {  # Need to keep sampling until we've passed burnin if burnin is absolute.
-            # Waiting for every chain to report STOP before re-counting (not
-            # re-counting on a timer) means each pass adds exactly check.freq
-            # blocks to every chain, so the count at the first check doesn't
-            # depend on how fast the chains happen to run.
             while(!nrow(check.blocks$m) > 0) {
+              check_workers_alive()
               for(cn in 1:nc) write_state("RESUME", paste0(dump.path, '/block',cn,'Status.txt'))
               write_state("GO", directive.file)
-              wait_for_all_stop()
+              Sys.sleep(60)
               check.blocks <- countNimbleBlocks(read.path = dump.path, burnin = nb, ni.block = ni)
             }
           }
@@ -443,7 +416,7 @@ runNimble <-
       }
       # Wait for workers to actually exit before gathering the second monitor
       # set, so a chain that hasn't yet noticed STOP can't add one more block
-      # after the primary gatherNimble() snapshot above (finding F13).
+      # after the primary gatherNimble() snapshot above.
       wait.start <- Sys.time()
       while(proc$is_alive() && as.numeric(Sys.time() - wait.start, units = "secs") < 300) Sys.sleep(2)
       if(proc$is_alive()) warning("Workers still running 5 minutes after STOP was issued; ",
@@ -474,7 +447,6 @@ runNimble <-
           check.blocks <- countNimbleBlocks(read.path = dump.path, burnin = nb, ni.block = ni)
         }
       }
-      nblks.previous <- 0 # Will be updated as we go.
       while(!run.complete) {
         check_workers_alive()
         check.blocks <- countNimbleBlocks(read.path = dump.path, burnin = nb, ni.block = ni)
@@ -490,7 +462,7 @@ runNimble <-
         # Seeded runs: once the shortest chain has nblks.cap blocks, use exactly
         # that many, ignoring however far the chains ran on during the 300-s
         # sleep (or finished after STOP). nblks.cap is the smallest count that
-        # passes do.gather.check below, so the stopping decision is unchanged.
+        # passes do.gather.check below, so the cap never moves the stopping point.
         if(!is.null(nblks.cap) && nblks >= nblks.cap) nblks <- nblks.cap
         nb.now <- ifelse(nb<1, nb*ni*nblks, nb)
         ni.now <- ni*nblks
@@ -523,7 +495,7 @@ runNimble <-
         nchecks <- nchecks + 1
       } # Close while(!run.complete)
       # Wait for workers to actually exit before gathering the second monitor
-      # set (finding F13, see the automated branch above for the rationale).
+      # set (see the automated branch above for the rationale).
       wait.start <- Sys.time()
       while(proc$is_alive() && as.numeric(Sys.time() - wait.start, units = "secs") < 300) Sys.sleep(2)
       if(proc$is_alive()) warning("Workers still running 5 minutes after STOP was issued; ",
