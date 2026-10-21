@@ -80,11 +80,11 @@ runNimble <-
        (is.null(max.samples.saved) || !is.numeric(max.samples.saved) || max.samples.saved <= 0))
       stop("max.samples.saved must be a positive number when check.freq is NULL ",
            "(manual mode); it is the sole criterion used to decide when sampling stops.")
-    # The check above only guarantees more than 100 draws per chain before
-    # max.samples.saved caps them. In automated mode, checkNimble() requires
-    # Rhat (mcmcOutput's summary() only calculates it above 100 draws per
-    # chain), so a cap at or below 100 would still fail at the first
-    # convergence check - after workers have already launched and sampled.
+    # The ni/nb/nt checks above guarantee more than 100 draws per chain before
+    # max.samples.saved caps them. In automated mode checkNimble() requires
+    # Rhat, which mcmcOutput's summary() only calculates above 100 draws per
+    # chain, so the cap itself must exceed 100. Checked here so the error comes
+    # before any worker launches.
     if(automate.convergence.checks && !is.null(max.samples.saved) &&
        is.numeric(max.samples.saved) && max.samples.saved <= 100)
       stop("max.samples.saved (", max.samples.saved, ") must exceed 100 in automated ",

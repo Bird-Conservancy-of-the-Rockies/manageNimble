@@ -1,12 +1,12 @@
 # Plan: chain-specific inits and reproducible seeding in `runNimble()`
 
 Status: **implemented 2026-10-20, committed on branch
-`add_jittered_inits_and_reproducibility`** (version 0.4.0; not merged). Full
-suite 739 pass / 0 fail; `R CMD check` 0 errors, the 2 pre-existing warnings,
-0 notes. Not verified by execution here: `runNimble()`'s own parent loop
-(needs GNU `parallel`), so the manual-mode cap is checked statically. Next step: run
-`smoke-test/runNimble_smoke_test.R` on the Linux server against a separate
-library install of the branch, then merge.
+`add_jittered_inits_and_reproducibility`** (version 0.4.0; not merged).
+`smoke-test/runNimble_smoke_test.R` passes end to end on the Linux server
+(all 25 checks, against a separate library install of the branch). The smoke
+test found three issues, all resolved on the branch (see NEWS.md 0.4.0):
+`.tmp` block dumps counted as complete, a spurious exit-handler warning, and
+automated mode accepting `max.samples.saved` <= 100. Next step: merge to `main`.
 Target version: 0.4.0 (non-breaking, one flagged exception - see Decision 1).
 Version on `main` before this work: 0.3.1.
 
