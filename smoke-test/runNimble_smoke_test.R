@@ -99,11 +99,14 @@ y <- c(2.1, 3.4, 2.9, 3.8, 1.7, 3.1, 2.6, 3.3, 2.2, 4.0,
 
 # Automated mode; max.samples.saved forces additional thinning, so the second
 # monitor set's correspondence with the primary set is exercised under a cap.
-# ni, nt and nb keep (ni - ni * nb) / nt above runNimble()'s minimum of 100.
+# ni, nt and nb give (ni - ni * nb) / nt = 240 pre-cap draws per chain (350
+# under D's absolute nb = 100 below), comfortably above max.samples.saved = 150
+# so the cap actually engages; max.samples.saved itself clears mcmcOutput's own
+# threshold for calculating Rhat (more than 100 draws per chain) once applied.
 automated <- list(model.path = model.file, data = list(y = y), constants = list(N = 20),
                   parameters = c("mu", "sigma"), parameters2 = "z", nt2 = 20,
-                  nc = nc, ni = 400, nt = 2, nb = 0.4, check.freq = 1, max.tries = 3,
-                  max.samples.saved = 100, Rht.required = 1.1, neff.required = 50,
+                  nc = nc, ni = 800, nt = 2, nb = 0.4, check.freq = 1, max.tries = 3,
+                  max.samples.saved = 150, Rht.required = 1.1, neff.required = 50,
                   inits = list(mu = 0, sigma = 1), sav.model = TRUE, rtrn.model = FALSE)
 # Sets each argument whole, so a list-valued one (such as a per-chain inits
 # list) replaces the base value outright instead of being merged into it.

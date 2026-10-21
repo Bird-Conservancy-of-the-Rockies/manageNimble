@@ -256,6 +256,29 @@ test_that("the initial wait counts distinct chains, not raw file count", {
   expect_lt(length(unique(stringr::str_split(files, "_", simplify = TRUE)[, 2])), 2)
 })
 
+test_that("count_distinct_chains' own pattern excludes an in-progress .tmp dump", {
+  # Extracts the actual pattern string from the parsed call (evaluating the
+  # literal AST node rather than deparse()'d text, which would double-escape
+  # its backslash). A readdir caught mid-rename can list a block's .tmp
+  # alongside its already-renamed final file - an unanchored "mod_chn" match
+  # would count both as the same chain, which happens to still pass the
+  # distinct-chain-count check, but would feed a duplicate block number into
+  # countNimbleBlocks() downstream.
+  found <- NULL
+  walk <- function(x) {
+    if (is.call(x)) {
+      if (identical(x[[1]], as.name("str_detect")) && identical(x[[2]], as.name("fl")))
+        found <<- eval(x[[3]])
+      for (i in seq_along(x)) if (!is.null(x[[i]])) try(walk(x[[i]]), silent = TRUE)
+    }
+  }
+  walk(body(manageNimble::runNimble))
+  expect_false(is.null(found))
+
+  expect_true(stringr::str_detect("mod_chn1_1.RData", found))
+  expect_false(stringr::str_detect("mod_chn1_1.RData.tmp", found))
+})
+
 test_that("a chain count different from nc is caught in both directions", {
   # Catches both an unexpected extra chain and a chain that wrote nothing.
   b <- fn_text(manageNimble::runNimble)

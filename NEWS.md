@@ -131,6 +131,34 @@ the pieces it relies on (`max.nblks`, `minGatherBlocks()`) are tested by
 execution. `smoke-test/runNimble_smoke_test.R` runs the whole thing end to end
 on a Linux server.
 
+## Follow-up fixes found by running the smoke test on a Linux server
+
+- A still-being-written `mod_chn<c>_<b>.RData.tmp` (`runNimbleBlock()`'s
+  temp-file-then-rename) could be listed alongside its already-renamed final
+  file by a `readdir()` caught mid-rename. `countNimbleBlocks()` and
+  `runNimble()`'s own initial "has every chain written a block" wait both
+  matched any file name containing `mod_chn`, so a `.tmp` counted as the same
+  block number as its final file - `countNimbleBlocks()`'s gap check then
+  failed with chain and block list both empty, since every block number from
+  1 to the max was technically present, just one of them twice. Both now match
+  only names ending in `.RData`. Confirmed by execution: a seeded manual-mode
+  smoke-test run hit this exact empty-list failure before the fix.
+- `runNimble()`'s `on.exit()` handler wrote `STOP` to
+  `dump.path/runNimbleDirective.txt` unconditionally; once `delete.blocks`
+  (the default) had already removed `dump.path`, this raised a `cannot open
+  file` warning on every run's exit - `try(silent = TRUE)` catches the error
+  that follows but not the warning that precedes it. The write is now skipped
+  when `dump.path` no longer exists.
+- `runNimble()` already validated that burn-in and thinning alone leave more
+  than 100 post-processing draws per chain (`mcmcOutput`'s `summary()` only
+  calculates Rhat above that many), but didn't account for `max.samples.saved`
+  capping them further. In automated mode (`check.freq` set), a
+  `max.samples.saved` at or below 100 now stops before any worker launches,
+  instead of failing opaquely inside `checkNimble()` at the first convergence
+  check - well after workers have launched and sampled. Manual mode is
+  unaffected (`max.samples.saved` there only decides when sampling stops, and
+  convergence is never checked).
+
 # manageNimble 0.3.1
 
 ## Follow-up fix: `mod$iter.key` (0.3.0's own correspondence key) was never actually attached to the saved model object

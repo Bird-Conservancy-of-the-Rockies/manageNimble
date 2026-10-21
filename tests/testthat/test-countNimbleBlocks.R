@@ -88,6 +88,30 @@ test_that("non-block files in dump.path are ignored", {
   expect_true(all(grepl("^mod_chn", rownames(r$m))))
 })
 
+test_that(".tmp files from an in-progress atomic rename are not counted as dumps", {
+  # runNimbleBlock() writes <dump>.RData.tmp then renames it into place; a
+  # lone .tmp (caught mid-write, before its final file exists) must not be
+  # treated as a completed block.
+  d <- make_empty_dump_dir(list(1:3, 1:3))
+  file.create(file.path(d, "mod_chn1_4.RData.tmp"))
+
+  r <- countNimbleBlocks(d, burnin = 0.5, ni.block = 1000)
+  expect_equal(r$nblks, 3)
+  expect_false(any(grepl("\\.tmp$", rownames(r$m))))
+})
+
+test_that("a .tmp file alongside its already-renamed final file doesn't look like a duplicate block", {
+  # A readdir caught mid-rename can list both mod_chn1_3.RData and its .tmp at
+  # once; an unanchored "mod_chn" match parses both to the same (chn, blk),
+  # making the gap check below fail with an empty "missing block(s)" list.
+  d <- make_empty_dump_dir(list(1:3, 1:3))
+  file.create(file.path(d, "mod_chn1_3.RData.tmp"))
+
+  r <- countNimbleBlocks(d, burnin = 0.5, ni.block = 1000)
+  expect_equal(r$nblks, 3)
+  expect_equal(sum(r$m[, "chn"] == 1 & r$m[, "blk"] == 3), 1)
+})
+
 test_that("a chain with no dumps at all is returned without complaint", {
   # countNimbleBlocks only describes what is on disk; it is not its job to know
   # how many chains SHOULD exist. The "did every chain report in" check lives in

@@ -80,6 +80,17 @@ runNimble <-
        (is.null(max.samples.saved) || !is.numeric(max.samples.saved) || max.samples.saved <= 0))
       stop("max.samples.saved must be a positive number when check.freq is NULL ",
            "(manual mode); it is the sole criterion used to decide when sampling stops.")
+    # The check above only guarantees more than 100 draws per chain before
+    # max.samples.saved caps them. In automated mode, checkNimble() requires
+    # Rhat (mcmcOutput's summary() only calculates it above 100 draws per
+    # chain), so a cap at or below 100 would still fail at the first
+    # convergence check - after workers have already launched and sampled.
+    if(automate.convergence.checks && !is.null(max.samples.saved) &&
+       is.numeric(max.samples.saved) && max.samples.saved <= 100)
+      stop("max.samples.saved (", max.samples.saved, ") must exceed 100 in automated ",
+           "mode (check.freq is set): mcmcOutput's summary() only calculates Rhat ",
+           "above 100 draws per chain, and max.samples.saved is a hard per-chain cap ",
+           "applied after burn-in and thinning.")
     if(automate.convergence.checks && !is.null(max.tries) && max.tries < 1)
       stop("max.tries must be at least 1 (or NULL for unlimited retries).")
     if(!is.null(seed)) {
@@ -155,7 +166,11 @@ runNimble <-
       }
     }
     on.exit({
-      try(writeLines("STOP", directive.file), silent = TRUE)
+      # try(silent = TRUE) catches the error writeLines() raises on a missing
+      # path, but not the warning file() issues first - dump.path is gone by
+      # the time this runs on the normal-completion path (delete.blocks), so
+      # check for it rather than relying on try() to suppress the fallout.
+      if(dir.exists(dump.path)) try(writeLines("STOP", directive.file), silent = TRUE)
       if(!is.null(proc) && proc$is_alive()) try(proc$kill_tree(), silent = TRUE)
       try(copy_logs(), silent = TRUE)
     }, add = TRUE)
@@ -176,7 +191,9 @@ runNimble <-
     }
     count_distinct_chains <- function() {
       fl <- list.files(dump.path)
-      fl <- fl[str_detect(fl, "mod_chn")]
+      # Anchored so a still-being-written mod_chn<c>_<b>.RData.tmp isn't counted
+      # (see countNimbleBlocks()'s own matching for why).
+      fl <- fl[str_detect(fl, "^mod_chn.*\\.RData$")]
       if(length(fl) == 0) return(0L)
       length(unique(str_split(fl, "_", simplify = TRUE)[,2]))
     }
