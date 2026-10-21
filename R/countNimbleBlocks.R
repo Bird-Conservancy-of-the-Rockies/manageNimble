@@ -1,7 +1,13 @@
-countNimbleBlocks <- function(read.path, burnin, ni.block) {
+countNimbleBlocks <- function(read.path, burnin, ni.block, max.nblks = NULL) {
   ##  This could be made more flexible, but for now use a stereotyped approach:
   fl <- list.files(read.path)
-  fl <- fl[which(str_detect(fl, "mod_chn"))]
+  # Anchored to end in ".RData" so a still-being-written mod_chn<c>_<b>.RData.tmp
+  # (runNimbleBlock() writes each block via temp file + atomic rename) is never
+  # counted as a complete dump - a readdir caught mid-rename can list both names
+  # at once, which would otherwise look like the same block number twice. A
+  # malformed ".RData" name (e.g. a truncated write) still matches, reaching the
+  # NA-parsing check below rather than being silently dropped.
+  fl <- fl[which(str_detect(fl, "^mod_chn.*\\.RData$"))]
 
   m <- cbind(chn = str_split(fl, "_", simplify = TRUE)[,2] %>%
                str_sub(4, -1) %>% as.integer,
@@ -25,6 +31,10 @@ countNimbleBlocks <- function(read.path, burnin, ni.block) {
            "Investigate why the block(s) are missing (see worker logs) before resuming.")
   }
   nblks <- min(tapply(m[,2], m[,1], max))
+  # max.nblks only ever lowers the count, to ignore blocks beyond a fixed
+  # target - runNimble()'s seeded manual mode uses it so that polling overshoot
+  # can't change what gets gathered.
+  if(!is.null(max.nblks)) nblks <- min(nblks, as.integer(max.nblks))
   m <- m[which(m[,2] <= nblks),,drop = FALSE] # Make chains same length (chop off excess blocks on longer chains)
 
   # Drop blocks that only contain burnin

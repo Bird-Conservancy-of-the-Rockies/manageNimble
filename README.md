@@ -1,17 +1,16 @@
 # manageNimble
 
 ## Acknowledgement
-Portions of this package - a full code review and bug-fix pass over the existing functions, and the addition of `forceFinishNimble()` - were written and/or reviewed with AI assistance from Claude (Anthropic), across multiple sessions. See `NEWS.md` for what changed and when, and the `\author{}` note in each function's own help page (`?functionName`) for which functions Claude touched specifically.
+Portions of this package - a full code review and bug-fix pass over the existing functions, and several later features - were written and/or reviewed with AI assistance from Claude (Anthropic), across multiple sessions. See `NEWS.md` for what changed and when, and the `\author{}` note in each function's own help page (`?functionName`) for which functions Claude touched specifically.
 
 ## Package contents
-```runNimble``` Primary (and only exported entry point besides the four below) function that allows parallel processing and automated convergence and sampling checks for Bayesian model fitting with Nimble. Supports an optional second monitor set (`parameters2`/`nt2`) for quantities too large to retain at the primary thinning rate - see `?runNimble`.<br>
+```runNimble``` Primary (and only exported entry point besides the three below) function that allows parallel processing and automated convergence and sampling checks for Bayesian model fitting with Nimble. Supports an optional second monitor set (`parameters2`/`nt2`) for quantities too large to retain at the primary thinning rate, chain-specific initial values, and reproducible seeding - see `?runNimble`.<br>
 ```runNimbleBlock``` Exported. Base function called by `runNimble`'s generated worker script to initiate or continue sampling and save posterior samples as a block.<br>
 ```checkNimble``` Exported. Base function called by `runNimble` used to summarize posterior parameter distributions, calculate Rhat and n_effective, and assess whether convergence and MCMC sampling targets have been met.<br>
 ```mcmcOutputSubset``` Exported. Utility function that subsets an mcmcOutput object. Used by `checkNimble` prior to summarizing MCMC samples when not all parameters sampled need to be summarized.<br>
-```forceFinishNimble``` Exported. Manually gathers and checks convergence for a `runNimble` dump.path (live or abandoned) under a caller-specified burn-in, without waiting out `runNimble`'s own `max.tries` loop - see `?forceFinishNimble`.<br>
 ```countNimbleBlocks``` Internal (not exported). Used by `runNimble` to count saved NIMBLE blocks and calculate sampling progress.<br>
 ```gatherNimble``` Internal (not exported). Used by `runNimble` to gather and organize NIMBLE sample blocks into an mcmcOutput object.<br>
-```gatherNimble2``` Internal (not exported). Companion to `gatherNimble`; gathers the second monitor set, if any, into a plain matrix with chains stacked.
+```gatherNimble2``` Internal (not exported). Companion to `gatherNimble`; gathers the second monitor set, if any, keeping exactly the draws whose iterations the primary set retained, as `list(out, iter.key)`.
 
 ## How it works
 
@@ -52,7 +51,19 @@ With `check.freq = NULL` the automated checking is skipped entirely and the run 
 
 ### The second monitor set
 
-`parameters2`/`nt2` map onto NIMBLE's `monitors2`/`thin2`, for quantities too large to retain at the primary thinning rate. They take no part in convergence checking. `gatherNimble2()` collects them once at the end, after the parent has waited for the workers to actually exit - otherwise a worker that had not yet noticed `STOP` could add a block after the primary gather, giving the two monitor sets different effective burn-in. The result is written to `<mod.nam>_monitors2.rds` as a plain `[ndraw, nparam]` matrix with chains stacked.
+`parameters2`/`nt2` map onto NIMBLE's `monitors2`/`thin2`, for quantities too large to retain at the primary thinning rate. They take no part in convergence checking. `gatherNimble2()` collects them once at the end, after the parent has waited for the workers to actually exit - otherwise a worker that had not yet noticed `STOP` could add a block after the primary gather, giving the two monitor sets different effective burn-in.
+
+The second set's draws are selected from the primary set's: `gatherNimble()` returns the exact absolute NIMBLE iterations it retained, and `gatherNimble2()` keeps a second-set draw only if its iteration is one of them - which is why `nt2` must be a whole multiple of `nt`. So the ratio of second-set to primary rows is always `nt2 / nt`, however many blocks a run needed, and every second-set row traces to a specific primary row. The result is written to `<mod.nam>_monitors2.rds` (and, by default, attached as `mod$monitors2`) as `list(out, iter.key)`: an `[ndraw, nparam]` matrix with chains stacked, plus a `data.frame(chn, iter)` aligned with its rows. Join it to `mod$iter.key` - the same key for the rows of `mod$mcmcOutput` - on `c("chn", "iter")` to pair the two sets.
+
+### Initial values, seeding and reproducibility
+
+`inits` can be one named list shared by every chain, an unnamed list of `nc` named lists (one per chain), or a function returning a named list. A function is called once per chain **in the parent, before any worker launches** - so it can use objects from the calling session, and a failure stops the run before anything is written. For the per-chain and function forms, the parent saves a list of `nc` inits lists to `NimbleObjects.RData` and each worker keeps only its own element; a single list goes to every worker as passed.
+
+With `seed`, the parent derives one non-overlapping L'Ecuyer-CMRG stream per chain (`parallel::nextRNGStream()`), plus an independent substream for generating each chain's inits. Each worker installs its stream as the first thing inside its `tryCatch`, before sourcing the model file or building, compiling or sampling anything, and never reseeds, so continuation blocks carry on in the same stream. NIMBLE's compiled samplers (including NUTS) draw from the worker's R random-number stream, so that's all reproducible sampling needs. The parent restores its own session's RNG state afterwards. The seed, the streams and any per-chain or generated inits are recorded in the saved object (`mod$rng`, `mod$inits`).
+
+Reproducing the saved object also requires the same number of blocks to be gathered every time.
+- **Automated mode** gets this for free: before every convergence check, each chain stops at exactly the same block count.
+- **Manual mode (`check.freq = NULL`)** doesn't: workers keep sampling until the parent's 5-minute check sees enough draws, so they overshoot. A seeded run gathers exactly the smallest number of blocks that meets the stopping rule (`max.nblks` in `countNimbleBlocks()`) and ignores the rest. Unseeded runs gather every block available.
 
 ### Cleanup
 

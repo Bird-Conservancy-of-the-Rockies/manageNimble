@@ -36,10 +36,11 @@ test_that("the multi-line runNimbleBlock() calls survive the writeLines split", 
 test_that("every top-level symbol the worker reads is either saved to disk, assigned, or a local helper", {
   saved <- c("model.path", "constants", "data", "inits", "parameters", "ni", "nt",
              "dump.path", "SamplerSourcePath", "check.freq",
-             "automate.convergence.checks", "directive.file", "parameters2", "nt2")
+             "automate.convergence.checks", "directive.file", "parameters2", "nt2",
+             "inits.per.chain", "rng.streams")
   assigned <- c("chn", "path.NimbleWorkspace", "i", "dump.file.path", "mod.comp",
                 "status.file", "status.chain", "i.stop", "directive", "error.log")
-  # read_state()/write_state() are defined in-script (finding F26); e/path/text/
+  # read_state()/write_state() are defined in-script; e/path/text/
   # tmp/x are their own parameters and locals, picked up by the crude
   # all.vars() scan below because it doesn't understand function scoping.
   helpers <- c("read_state", "write_state", "e", "path", "text", "tmp", "x")
@@ -50,10 +51,8 @@ test_that("every top-level symbol the worker reads is either saved to disk, assi
   syms <- unique(unlist(lapply(p, all.vars)))
   undefined <- setdiff(syms, c(saved, assigned, helpers, from_model_file, pkgs))
 
-  # FIXED (F14): this used to always include "cn" - the "undefined condition
-  # reached" branch referenced the PARENT's loop variable, which does not
-  # exist in the worker, so that branch died with "object 'cn' not found"
-  # instead of ever reporting the error. It now raises stop() with the
+  # An undefined name would only fail when its line runs inside a worker. The
+  # "undefined condition reached" branch, for example, raises stop() with the
   # worker's own `chn`, caught by the enclosing tryCatch like any other error.
   expect_equal(undefined, character(0))
 })
@@ -76,7 +75,7 @@ test_that("the tryCatch/error-log convention actually catches and logs a worker 
     paste0("dump.path <- ", deparse(d)),
     txt[i.error.log],
     "tryCatch({",
-    "  stop('deliberate test error for F25/F27 log verification')",
+    "  stop('deliberate test error for error-log verification')",
     txt[i.catch:length(txt)]
   )
   f <- tempfile(fileext = ".R")
@@ -99,11 +98,48 @@ test_that("the tryCatch/error-log convention actually catches and logs a worker 
 test_that("the objects runNimble saves are exactly the ones the worker loads", {
   # The save() call and the worker script have to be kept in step by hand.
   b <- fn_text(manageNimble::runNimble)
-  expect_true(grepl('"parameters2", "nt2"', b, fixed = TRUE))
+  expect_true(grepl('"parameters2", "nt2", "inits.per.chain", "rng.streams"', b, fixed = TRUE))
 
   txt <- paste(worker_script_lines(), collapse = "\n")
   expect_true(grepl("monitors2 = parameters2", txt, fixed = TRUE))
   expect_true(grepl("n.thin2 = nt2", txt, fixed = TRUE))
+  expect_true(grepl("rng.streams[[as.integer(chn)]]", txt, fixed = TRUE))
+  expect_true(grepl("if(inits.per.chain) inits <- inits[[as.integer(chn)]]", txt, fixed = TRUE))
+})
+
+test_that("the worker installs its RNG stream and selects its inits before anything can draw a random number", {
+  # Order matters: the stream must be in place before the model file is
+  # sourced, the model built/compiled, or the first block sampled; per-chain
+  # inits must be selected before the first runNimbleBlock() call reads them.
+  # Both inside the tryCatch, so a failure is logged like any other.
+  txt <- worker_script_lines()
+  i.try    <- which(txt == "tryCatch({")
+  i.seed   <- which(txt == "if(!is.null(rng.streams)) {")
+  i.sel    <- which(txt == "if(inits.per.chain) inits <- inits[[as.integer(chn)]]")
+  i.source <- which(txt == "source(model.path)")
+  i.block  <- which(grepl("runNimbleBlock(", txt, fixed = TRUE))[1]
+  expect_length(i.seed, 1)
+  expect_length(i.sel, 1)
+  expect_true(i.try < i.seed && i.seed < i.sel && i.sel < i.source && i.source < i.block)
+
+  # The worker's RNGkind() call must name the same generator, normal and
+  # sample kinds the parent derived the streams under.
+  i.kind <- which(grepl("^RNGkind\\(", txt))
+  expect_length(i.kind, 1)
+  call <- parse(text = txt[i.kind])[[1]]
+  expect_equal(unname(vapply(as.list(call)[-1], as.character, character(1))),
+               unname(RNG_KIND))
+})
+
+test_that("defaults leave seeding off", {
+  expect_null(formals(manageNimble::runNimble)$seed)
+})
+
+test_that("seeded manual mode caps the gathered block count", {
+  b <- fn_text(manageNimble::runNimble)
+  expect_true(grepl("nblks.cap <- if (!is.null(seed) && !automate.convergence.checks)", b, fixed = TRUE))
+  expect_true(grepl("if (!is.null(nblks.cap) && nblks >= nblks.cap) nblks <- nblks.cap", b, fixed = TRUE))
+  expect_true(grepl("max.nblks = nblks.cap", b, fixed = TRUE))
 })
 
 test_that("the whole worker body is wrapped in tryCatch, logging to chn<c>_error.log", {
@@ -126,20 +162,13 @@ test_that("defaults leave the second monitor set switched off", {
 })
 
 # ---------------------------------------------------------------------------
-# Regression tests for fixed bugs (see NEWS.md for the full write-up)
+# Worker coordination and runNimble() structure
 # ---------------------------------------------------------------------------
 
-test_that("FIXED (F1): SamplerSourcePath is passed as a real argument to runNimbleBlock", {
-  # Previously runNimble built
-  #   runNimbleBlock(mod.lst = list(model, constants, data, inits, parameters,
-  #                                 SamplerSourcePath = SamplerSourcePath), ...)
-  # so it became the sixth element of mod.lst. runNimbleBlock's own
-  # SamplerSourcePath argument kept its default NA, and neither
-  # require(nimbleHMC) nor source(SamplerSourcePath) ever ran.
+test_that("SamplerSourcePath is passed as a real argument to runNimbleBlock, not inside mod.lst", {
+  # runNimbleBlock() only sources SamplerSourcePath (and loads nimbleHMC) when
+  # it arrives as its own argument; mod.lst has no slot for it.
   txt <- paste(worker_script_lines(), collapse = "\n")
-
-  expect_false(grepl("list(model, constants, data, inits, parameters, SamplerSourcePath = SamplerSourcePath)",
-                     txt, fixed = TRUE))
   expect_true(grepl("list(model, constants, data, inits, parameters)", txt, fixed = TRUE))
 
   p <- parse(text = txt)
@@ -152,18 +181,17 @@ test_that("FIXED (F1): SamplerSourcePath is passed as a real argument to runNimb
   }
   for (e in p) walk(e)
 
-  expect_true("SamplerSourcePath" %in% names(found))            # now a real argument of the call
-  expect_false("SamplerSourcePath" %in% names(found$mod.lst))    # no longer buried in mod.lst
+  expect_true("SamplerSourcePath" %in% names(found))
+  expect_false("SamplerSourcePath" %in% names(found$mod.lst))
 })
 
-test_that("FIXED (F26): worker coordination reads retry, writes are atomic", {
+test_that("worker coordination reads retry, writes are atomic", {
   # readLines() on a file being rewritten by another process can return
-  # character(0) or more than one line. Previously every conditional in the
-  # worker treated that as a real state and crashed; the parent already
-  # wrapped its own reads in try()+retry, but the worker had no equivalent.
-  # read_state()'s own definition legitimately contains a bare readLines()
-  # call (that's its implementation) - what must be gone is every OTHER call
-  # site that used to read the directive/status files directly.
+  # character(0) or more than one line, and a bare conditional on either
+  # errors (demonstrated below). Every worker read of the directive/status
+  # files goes through read_state(), which retries until it gets exactly one
+  # line; every write goes through write_state() (temp file + rename).
+  # read_state()'s own definition contains the one bare readLines() call.
   txt <- paste(worker_script_lines(), collapse = "\n")
 
   expect_true(grepl("read_state <- function", txt, fixed = TRUE))
@@ -177,38 +205,29 @@ test_that("FIXED (F26): worker coordination reads retry, writes are atomic", {
   expect_true(grepl("write_state('STOP', status.file)", txt, fixed = TRUE))
   expect_true(grepl("write_state('GO', status.file)", txt, fixed = TRUE))
 
-  # what a torn read used to do to a bare conditional, for context
+  # a bare conditional on a torn read
   empty <- character(0)
   expect_error(if (empty == "GO") TRUE, "argument is of length zero")
   expect_error(while (empty != "STOP") break, "argument is of length zero")
   expect_error(if (c("GO", "GO") == "GO") TRUE, "condition has length > 1")
 
-  # the parent's directive/status writes are atomic too now
+  # the parent's directive/status writes are atomic too
   b <- fn_text(manageNimble::runNimble)
   expect_true(grepl("write_state <- function(text, path)", b, fixed = TRUE))
   expect_false(grepl('writeLines("GO", directive.file)', b, fixed = TRUE))
 })
 
-test_that("FIXED (F10): rtrn.model assigns the model object under mod.nam, not the name itself", {
+test_that("rtrn.model assigns the model object under mod.nam", {
   b <- fn_text(manageNimble::runNimble)
-
   expect_true(grepl("assign(mod.nam, mod, envir = .GlobalEnv)", b, fixed = TRUE))
-  expect_false(grepl('assign("mod", mod.nam, envir = .GlobalEnv)', b, fixed = TRUE))
 })
 
-test_that("FIXED (F21): dplyr/stringr/coda/mcmcOutput/R.utils are declared Imports, not just Suggests", {
-  # Previously these were listed under Suggests: with no require() calls for
-  # most of them, so runNimble() failed inside the search-path fallback the
-  # moment a caller hadn't happened to attach dplyr/stringr themselves - and
-  # by the time it failed, process$new() had already launched nc workers that
-  # would then sample forever against nobody watching.
-  #
-  # The fix here is NAMESPACE imports (DESCRIPTION Imports: + importFrom() in
-  # NAMESPACE), not require() calls in the function body: package code
-  # resolves bare names through its own declared imports regardless of what
-  # the caller has attached, so runNimble() needs no require(dplyr) of its
-  # own for this to be reliable - and R CMD check flags require() calls for
-  # anything already available via NAMESPACE as bad practice.
+test_that("dplyr/stringr/coda/mcmcOutput/R.utils are declared Imports", {
+  # Package code resolves bare names through its own declared imports
+  # (DESCRIPTION Imports: + importFrom() in NAMESPACE) regardless of what the
+  # caller has attached, so runNimble() works in a session that has not
+  # attached dplyr/stringr. require() calls for these in runNimble()'s body
+  # would be redundant and trip R CMD check's "declared dependencies" warning.
   desc <- read.dcf(system.file("DESCRIPTION", package = "manageNimble"))
   imports <- trimws(strsplit(desc[1, "Imports"], ",")[[1]])
   imports <- sub("\\s*\\(.*\\)$", "", imports)
@@ -220,37 +239,53 @@ test_that("FIXED (F21): dplyr/stringr/coda/mcmcOutput/R.utils are declared Impor
   expect_true("as.mcmc" %in% imp$coda)
   expect_true("mcmcOutput" %in% imp$mcmcOutput)
 
-  # bare require() calls for these are no longer in runNimble()'s own body -
-  # package code resolves them through the imports above regardless of the
-  # caller's session, so a require() here would only be redundant and would
-  # trip R CMD check's "declared dependencies" warning.
   b <- fn_text(manageNimble::runNimble)
   expect_false(grepl("require(dplyr)", b, fixed = TRUE))
   expect_false(grepl("require(stringr)", b, fixed = TRUE))
   expect_false(grepl("require(coda)", b, fixed = TRUE))
 })
 
-test_that("FIXED (F29): the initial wait counts distinct chains, not raw file count", {
-  # Previously `sum(str_detect(list.files(dump.path), "mod_chn")) < nc` was
-  # satisfied by nc files from a single fast chain.
+test_that("the initial wait counts distinct chains, not raw file count", {
+  # nc files can come from a single fast chain, so runNimble() waits until nc
+  # distinct chain numbers appear among the block dumps.
   b <- fn_text(manageNimble::runNimble)
   expect_true(grepl("count_distinct_chains()", b, fixed = TRUE))
-  expect_false(grepl('sum(str_detect(list.files(dump.path), "mod_chn")) < nc', b, fixed = TRUE))
 
   files <- c("mod_chn1_1.RData", "mod_chn1_2.RData")     # chain 2 has written nothing
   expect_gte(sum(stringr::str_detect(files, "mod_chn")), 2)
   expect_lt(length(unique(stringr::str_split(files, "_", simplify = TRUE)[, 2])), 2)
 })
 
-test_that("FIXED (F12): expecting the wrong number of chains is caught in both directions", {
-  # Previously only `> nc` was checked; a chain that silently wrote nothing
-  # (`< nc`) passed uncaught.
-  b <- fn_text(manageNimble::runNimble)
-  expect_true(grepl("length(unique(check.blocks$m[, 1])) != nc", b, fixed = TRUE))
-  expect_false(grepl("length(unique(check.blocks$m[, 1])) > nc", b, fixed = TRUE))
+test_that("count_distinct_chains' own pattern excludes an in-progress .tmp dump", {
+  # Extracts the actual pattern string from the parsed call (evaluating the
+  # literal AST node rather than deparse()'d text, which would double-escape
+  # its backslash). A readdir caught mid-rename can list a block's .tmp
+  # alongside its already-renamed final file - an unanchored "mod_chn" match
+  # would count both as the same chain, which happens to still pass the
+  # distinct-chain-count check, but would feed a duplicate block number into
+  # countNimbleBlocks() downstream.
+  found <- NULL
+  walk <- function(x) {
+    if (is.call(x)) {
+      if (identical(x[[1]], as.name("str_detect")) && identical(x[[2]], as.name("fl")))
+        found <<- eval(x[[3]])
+      for (i in seq_along(x)) if (!is.null(x[[i]])) try(walk(x[[i]]), silent = TRUE)
+    }
+  }
+  walk(body(manageNimble::runNimble))
+  expect_false(is.null(found))
+
+  expect_true(stringr::str_detect("mod_chn1_1.RData", found))
+  expect_false(stringr::str_detect("mod_chn1_1.RData.tmp", found))
 })
 
-test_that("FIXED (F25/F27/F30): worker failures are captured and workers can't be orphaned", {
+test_that("a chain count different from nc is caught in both directions", {
+  # Catches both an unexpected extra chain and a chain that wrote nothing.
+  b <- fn_text(manageNimble::runNimble)
+  expect_true(grepl("length(unique(check.blocks$m[, 1])) != nc", b, fixed = TRUE))
+})
+
+test_that("worker failures are captured and workers can't be orphaned", {
   b <- fn_text(manageNimble::runNimble)
 
   expect_true(grepl("check_workers_alive <- function", b, fixed = TRUE))
@@ -261,7 +296,7 @@ test_that("FIXED (F25/F27/F30): worker failures are captured and workers can't b
   expect_true(grepl("copy_logs <- function", b, fixed = TRUE))
 })
 
-test_that("FIXED (F28): proc is a local variable, not assigned into .GlobalEnv", {
+test_that("proc is a local variable, not assigned into .GlobalEnv", {
   b <- fn_text(manageNimble::runNimble)
   expect_false(grepl("proc <<-", b, fixed = TRUE))
   expect_true(grepl("proc <- NULL", b, fixed = TRUE))

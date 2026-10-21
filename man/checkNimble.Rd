@@ -32,8 +32,7 @@
 \author{
   Bryan L. Nuse and Quresh S. Latif, Bird Conservancy of the Rockies.
 
-  Substantially revised with Claude (Anthropic) assistance during a full code review; see
-  \code{NEWS.md} for what changed, including the fuzzy-tracking and NA-handling behaviour.
+  Developed in part with assistance from Claude (Anthropic); see \code{NEWS.md}.
 }
 
 \keyword{nimble}

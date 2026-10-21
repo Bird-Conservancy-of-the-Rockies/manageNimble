@@ -1,16 +1,14 @@
-# gatherNimble2() no longer shells out to lsof at all (finding F22 - blocks are
-# now written via temp-file + atomic rename). These tests don't need lsof on PATH.
-#
-# gatherNimble2() now derives its kept rows directly from gatherNimble()'s own
-# retained.iters selection (see NEWS.md and both functions' own comments),
-# rather than gathering/thinning independently, so nearly every test below
-# calls the real gatherNimble() first to get a genuine retained.iters to feed
-# in - exactly how runNimble() itself threads the two together. Its return
-# value is now list(out, iter.key), not a bare matrix.
+# gatherNimble2() keeps the second-set rows whose iterations are in
+# gatherNimble()'s retained.iters (see both functions' own comments), so nearly
+# every test below calls the real gatherNimble() first to get a genuine
+# retained.iters to feed in - the way runNimble() itself chains the two. Its
+# return value is list(out, iter.key).
 #
 # nt2/base.thin passed to gatherNimble2() below always match the nt/nt2 the
-# fixture dumps were written at (make_dump_dir's own nt/nt2 arguments), exactly
-# as runNimble() threads its own nt/nt2 through - see test-worker-script.R.
+# fixture dumps were written at (make_dump_dir's own nt/nt2 arguments), as
+# runNimble() threads its own nt/nt2 through - see test-worker-script.R.
+#
+# None of these tests needs lsof or any other external tool on the PATH.
 
 gather_both <- function(d, burnin, ni.block, nt2, base.thin = 1, max.samples.saved = NULL) {
   g <- gatherNimble(d, burnin = burnin, ni.block = ni.block, base.thin = base.thin,
@@ -84,33 +82,16 @@ test_that("no blocks left after burn-in returns NULL with a warning", {
   expect_null(o)
 })
 
-test_that("REMOVED: max.rows is no longer accepted - the cap is now inherited from gatherNimble()'s own max.samples.saved via retained.iters", {
-  # See the "PROPERTY" test below for the replacement mechanism and its own
-  # regression coverage.
-  d <- make_dump_dir(list(1:4, 1:4), ni.block = 100, with_samp2 = TRUE, nt2 = 25)
-  g <- gatherNimble(d, burnin = 0.5, ni.block = 100, base.thin = 1, max.samples.saved = NULL)
-
-  expect_error(
-    gatherNimble2(d, burnin = 0.5, ni.block = 100, nt2 = 25, base.thin = 1,
-                 retained.iters = g$retained.iters, max.rows = 4),
-    "unused argument"
-  )
-})
-
 # ---------------------------------------------------------------------------
-# Regression tests for fixed bugs (see NEWS.md for the full write-up)
+# Burn-in, unequal chains, validation, and the row correspondence
 # ---------------------------------------------------------------------------
 
-test_that("FIXED (F8): residual burn-in is now applied to the second set too", {
-  # gatherNimble2 used to drop whole burn-in blocks but, unlike gatherNimble,
-  # never dropped the remaining burn-in draws inside the first retained block.
-  # Now that its kept rows are the intersection with gatherNimble()'s own
-  # retained.iters (which already excludes burn-in, including the residual),
-  # this is handled correctly by construction rather than via a separate
-  # residual-trim computation. burnin = 0.5 * 100 * 5 = 250, realized 200, so
-  # base.thin = 1 retains 251:500 for the primary set; nt2 = 25 intersected
-  # with that leaves 275, 300, ..., 500 (225 and 250 are both <= 250 and so
-  # excluded).
+test_that("residual burn-in inside the first retained block is excluded from the second set", {
+  # Kept rows are the intersection with gatherNimble()'s retained.iters, which
+  # already excludes burn-in, including the residual inside the first retained
+  # block. burnin = 0.5 * 100 * 5 = 250, realized 200, so base.thin = 1 retains
+  # 251:500 for the primary set; nt2 = 25 intersected with that leaves 275,
+  # 300, ..., 500 (225 and 250 are both <= 250 and so excluded).
   d <- make_dump_dir(list(1:5, 1:5), ni.block = 100, with_samp2 = TRUE, nt2 = 25)
 
   r <- gather_both(d, burnin = 0.5, ni.block = 100, nt2 = 25)
@@ -124,11 +105,11 @@ test_that("FIXED (F8): residual burn-in is now applied to the second set too", {
   expect_equal(min(r$primary$out[, "iter"]), 251)
 })
 
-test_that("FIXED: fractional burnin.needed no longer silently empties every chain", {
-  # Reproduces the exact reported scenario: nb = 0.4, ni.block = 2010,
-  # nt2 = ni.block, nblks not a multiple of 5 - see gatherNimble()'s own
-  # regression test of the same name for the original root cause. Handled here
-  # via gatherNimble()'s (already-fixed) retained.iters, intersected exactly.
+test_that("every chain keeps its draws when the residual burn-in is less than one nt2 draw", {
+  # nb = 0.4, ni.block = 2010, nt2 = ni.block, nblks = 7: burn-in is 5628
+  # iterations, of which 1608 fall inside the first retained block - less than
+  # one nt2-spaced draw. Each retained block's single draw, at its last
+  # iteration, is past the cutoff and survives.
   d <- make_dump_dir(list(1:7, 1:7), ni.block = 2010, with_samp2 = TRUE, nt2 = 2010)
 
   r <- gather_both(d, burnin = 0.4, ni.block = 2010, nt2 = 2010)
@@ -155,10 +136,9 @@ test_that("residual burn-in trimming drops exactly the draws before the true cut
   expect_equal(nrow(o$out), 2 * (4 * 2 - 1))          # 2 chains x (4 blocks x 2 draws - 1 dropped)
 })
 
-test_that("FIXED (F9): chains contributing unequal numbers of draws now warns", {
-  # If one block dump lacks samp2 - an older dump, or a block written before
-  # parameters2 was added - that chain contributes fewer draws and the stacked
-  # matrix is unbalanced across chains. Previously silent.
+test_that("chains contributing unequal numbers of draws trigger a warning", {
+  # If one block dump lacks samp2, that chain contributes fewer draws and the
+  # stacked matrix is unbalanced across chains, so gatherNimble2() warns.
   d <- make_dump_dir(list(1:4, 1:4), ni.block = 100, with_samp2 = TRUE, nt2 = 100)
 
   f <- file.path(d, "mod_chn2_4.RData")
@@ -202,14 +182,11 @@ test_that("nt2 not a positive integer multiple of base.thin is a clear error", {
 })
 
 test_that("PROPERTY: with max.samples.saved-driven additional thinning on the primary set, the second set's row ratio stays exact and every row traces to a primary row", {
-  # This is the scenario the original bug hit: many retry blocks (20/chain,
-  # 2000 primary iterations/chain) comfortably exceed max.samples.saved (50),
-  # so gatherNimble() compresses the primary set via a systematic subsample
-  # (additional.thin.rate > 1). Before this fix, gatherNimble2() had no
-  # equivalent cap at all and could retain MORE rows than the (now-compressed)
-  # primary set - the opposite of what nt2 > base.thin is supposed to
-  # guarantee. Confirms both required properties hold here, not just in the
-  # uncapped case the other tests above exercise.
+  # Many blocks (20/chain, 2000 primary iterations/chain) comfortably exceed
+  # max.samples.saved (50), so gatherNimble() compresses the primary set via a
+  # systematic subsample (additional.thin.rate > 1). The second set has to
+  # follow that same selection: its row count stays at the exact
+  # nt2/base.thin ratio, and every row joins to a primary row.
   ni.block <- 100; base.thin <- 1; nt2 <- 5; burnin <- 0
   d <- make_dump_dir(list(1:20, 1:20), ni.block = ni.block, nt = base.thin,
                      with_samp2 = TRUE, nt2 = nt2)
@@ -235,6 +212,19 @@ test_that("PROPERTY: with max.samples.saved-driven additional thinning on the pr
   expect_equal(nrow(joined), nrow(o$iter.key))                         # no orphaned second-set rows
 
   # Cross-check against the fixture's own encoded true-iteration data,
-  # independent of the new iter.key mechanism entirely.
+  # independent of iter.key.
   expect_true(all(o$out[, "iter2"] %in% g$out[, "iter"]))
+})
+
+test_that("max.nblks: the second set ignores blocks past the cap, matching the primary set", {
+  d <- make_dump_dir(list(1:6, 1:6), ni.block = 100, with_samp2 = TRUE, nt2 = 50)
+  g <- gatherNimble(d, burnin = 0.5, ni.block = 100, base.thin = 1,
+                    max.samples.saved = NULL, max.nblks = 4)
+  o <- gatherNimble2(d, burnin = 0.5, ni.block = 100, nt2 = 50, base.thin = 1,
+                     retained.iters = g$retained.iters, max.nblks = 4)
+
+  ref <- gather_both(make_dump_dir(list(1:4, 1:4), ni.block = 100, with_samp2 = TRUE, nt2 = 50),
+                     burnin = 0.5, ni.block = 100, nt2 = 50)
+  expect_identical(o, ref$secondary)
+  expect_true(max(o$out[, "iter2"]) <= 400)
 })

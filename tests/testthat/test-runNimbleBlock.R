@@ -87,12 +87,9 @@ test_that("exactly one of mod.lst and comp.mcmc must be supplied", {
 })
 
 test_that("runNimbleBlock() only sources SamplerSourcePath as a top-level argument, never from inside mod.lst", {
-  # runNimbleBlock() itself was never buggy here - finding F1 was entirely
-  # about runNimble()'s worker-script generation calling it with
-  # SamplerSourcePath buried inside mod.lst (see test-worker-script.R's
-  # "FIXED (F1)" test, which confirms the generated script no longer does
-  # that). This test documents the contract runNimbleBlock() has always had
-  # and that fix now correctly relies on: mod.lst has no slot for it.
+  # mod.lst has no slot for SamplerSourcePath; it is only honoured as a
+  # top-level argument, which is how runNimble()'s generated worker script
+  # passes it (see test-worker-script.R).
   m <- toy()
   sf <- file.path(new_tmp(), "sampler.R")
   writeLines("assign('MN_SAMPLER_SOURCED', TRUE, envir = globalenv())", sf)
@@ -108,7 +105,7 @@ test_that("runNimbleBlock() only sources SamplerSourcePath as a top-level argume
   )
   expect_false(get("MN_SAMPLER_SOURCED", envir = globalenv()))   # <- never sourced
 
-  # the shape that would have worked
+  # passed as a top-level argument, it is sourced
   assign("MN_SAMPLER_SOURCED", FALSE, envir = globalenv())
   suppressMessages(
     runNimbleBlock(mod.lst = list(m$code, m$cons, m$dat, m$ini, m$pars),
@@ -119,15 +116,12 @@ test_that("runNimbleBlock() only sources SamplerSourcePath as a top-level argume
   expect_true(get("MN_SAMPLER_SOURCED", envir = globalenv()))
 })
 
-test_that("FIXED: a SamplerSourcePath file's nm.conf$removeSamplers()/addSampler() calls actually reach the nm.conf used to build the MCMC", {
-  # source(SamplerSourcePath) used to default to local = FALSE, evaluating the
-  # sourced file in .GlobalEnv - but nm.conf is local to this function's own
-  # call frame. In the normal case (a fresh worker process with no pre-existing
-  # global nm.conf) that meant an immediate "object 'nm.conf' not found" error
-  # on every real (non-trivial) SamplerSourcePath file; the test above never
-  # caught this because its fixture never references nm.conf at all. This test
-  # uses a genuine sampler-swap file instead, and confirms both that it no
-  # longer errors and that the swap lands on the real nm.conf: the sourced file
+test_that("a SamplerSourcePath file's nm.conf$removeSamplers()/addSampler() calls reach the nm.conf used to build the MCMC", {
+  # SamplerSourcePath is sourced with local = TRUE, so the file sees nm.conf,
+  # which is local to runNimbleBlock()'s call frame. A fresh worker process has
+  # no global nm.conf, so evaluating the file in .GlobalEnv would fail with
+  # "object 'nm.conf' not found". This test uses a genuine sampler-swap file
+  # and confirms that it runs and that the swap lands on the real nm.conf: the sourced file
   # records nm.conf$getSamplers() (nimble's own sampler-config introspection)
   # into a global side-channel immediately after the swap, which only shows
   # "slice" for mu if the local nm.conf here was the one actually mutated - a

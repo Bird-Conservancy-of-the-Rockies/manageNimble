@@ -64,9 +64,8 @@ test_that("par.ignore removes parameters from the strict check", {
   expect_true(checkNimble(mo, par.ignore = "junk")$result)
 })
 
-test_that("par.fuzzy.track works WITHOUT par.ignore (regression: s.focal not found)", {
-  # Before an earlier fix, s.focal was only defined inside the par.ignore
-  # branch, so this combination was a hard error.
+test_that("par.fuzzy.track works without par.ignore", {
+  # s.focal is built whether or not par.ignore is supplied.
   mo <- make_mcmcOutput(c(list(a = "good", `sp[1]` = "bad"),
                           setNames(as.list(rep("good", 4)), paste0("sp[", 2:5, "]"))))
 
@@ -76,10 +75,8 @@ test_that("par.fuzzy.track works WITHOUT par.ignore (regression: s.focal not fou
 })
 
 test_that("fuzzy.threshold is compared against a proportion, not a count", {
-  # Regression: the comparison used to be against length(Rht.fuzzy) *
-  # fuzzy.threshold, so for families larger than 1/fuzzy.threshold the right
-  # side exceeded 1 and the fuzzy check could never fire. With 20 members and
-  # threshold 0.05, 4 bad members (0.2) must fail.
+  # The unconverged fraction of the family is compared with fuzzy.threshold:
+  # with 20 members and threshold 0.05, 4 bad members (0.2) must fail.
   spec <- c(list(a = "good"),
             setNames(as.list(c(rep("bad", 4), rep("good", 16))), paste0("sp[", 1:20, "]")))
   mo <- make_mcmcOutput(spec)
@@ -140,12 +137,12 @@ test_that("a summary with no Rhat column stops and signals STOP to the workers",
 })
 
 # ---------------------------------------------------------------------------
-# Design characteristics that remain by choice (not bugs)
+# Intentional design characteristics
 # ---------------------------------------------------------------------------
 
 test_that("par.ignore's substring matching over-matches unless par.dontign rescues it", {
   # This is documented, intentional behaviour (man/checkNimble.Rd: par.ignore
-  # matches on "names containing" the given strings) -- not a bug. par.ignore =
+  # matches on "names containing" the given strings). par.ignore =
   # "p" is intended to skip p[1], but it also removes beta.p[1] and mu.p, both
   # badly unconverged, leaving only alpha to be checked. par.dontign exists
   # precisely to rescue cases like this (see the next test); a caller who
@@ -159,13 +156,12 @@ test_that("par.ignore's substring matching over-matches unless par.dontign rescu
 })
 
 # ---------------------------------------------------------------------------
-# Regression tests for fixed bugs (see NEWS.md for the full write-up)
+# par.dontign rescue, fuzzy tracking and NA handling
 # ---------------------------------------------------------------------------
 
-test_that("FIXED (F2): par.dontign now rescues parameters par.ignore would otherwise sweep up", {
-  # par.dontign used to be forwarded to mcmcOutputSubset() only when
-  # par.fuzzy.track was ALSO supplied, so in the (common) par.ignore-only case
-  # it silently did nothing.
+test_that("par.dontign rescues parameters par.ignore would otherwise sweep up", {
+  # par.dontign applies whenever par.ignore does, including when
+  # par.fuzzy.track isn't supplied.
   mo <- make_mcmcOutput(list(`p[1]` = "good", `p[2]` = "good",
                              `beta.p[1]` = "bad", `mu.p` = "bad", alpha = "good"))
 
@@ -177,15 +173,15 @@ test_that("FIXED (F2): par.dontign now rescues parameters par.ignore would other
   expect_true(without$result)                  # "converged" w.r.t. the one parameter checked
 
   expect_setequal(with$s$Parameter, c("beta.p[1]", "mu.p", "alpha"))  # rescued
-  expect_false(with$result)                    # correctly fails now that they're checked
+  expect_false(with$result)                    # fails, since they're checked
 })
 
-test_that("FIXED: par.ignore no longer leaks into $s via an unrelated par.fuzzy.track rescue", {
-  # Production case: "sd.pnt_occupancy" is in par.ignore, but "pnt_occupancy"
-  # (a different, legitimately fuzzy-tracked parameter) is in par.fuzzy.track
-  # and unanchored-matches "sd.pnt_occupancy[1]" as a substring, rescuing it
-  # into par.keep. s.focal already excluded it correctly (pass/fail was never
-  # affected); only the returned $s leaked it.
+test_that("par.ignore'd parameters stay out of $s even when a par.fuzzy.track entry substring-matches them", {
+  # "sd.pnt_occupancy" is in par.ignore, but "pnt_occupancy" (a different,
+  # legitimately fuzzy-tracked parameter) is in par.fuzzy.track and
+  # unanchored-matches "sd.pnt_occupancy[1]" as a substring, rescuing it into
+  # par.keep. checkNimble() re-applies the exact base-name drop, so it is kept
+  # out of both the convergence check and the returned $s.
   mo <- make_mcmcOutput(list(`pnt_occupancy[1]` = "good", `sd.pnt_occupancy[1]` = "good",
                              alpha = "good"))
 
@@ -197,25 +193,24 @@ test_that("FIXED: par.ignore no longer leaks into $s via an unrelated par.fuzzy.
   expect_true("pnt_occupancy[1]" %in% r$s$Parameter)
 })
 
-test_that("FIXED (F16): a par.fuzzy.track family matching nothing gives a clear error", {
-  # length(Rht.fuzzy) used to be able to reach 0, making prp.not.converged a
-  # 0/0 NaN and the comparison against fuzzy.threshold raise "missing value
-  # where TRUE/FALSE needed". A typo, or a family absent from a particular
-  # model, now gets a diagnosable message instead.
+test_that("a par.fuzzy.track family matching nothing gives a clear error", {
+  # With no matching members the fuzzy proportion would be 0/0 = NaN, and
+  # comparing it with fuzzy.threshold would fail with "missing value where
+  # TRUE/FALSE needed". A typo, or a family absent from a particular model,
+  # gets a diagnosable message instead.
   mo <- make_mcmcOutput(list(a = "good", b = "good", c = "good"))
 
   expect_error(checkNimble(mo, par.fuzzy.track = "typo"),
                "par.fuzzy.track matched no parameters")
 
-  # par.ignore matching nothing remains harmless, by contrast
+  # par.ignore matching nothing is harmless, by contrast
   expect_no_error(checkNimble(mo, par.ignore = "typo"))
 })
 
-test_that("FIXED (F4): fuzzy-tracked parameters are now also governed by neff.required", {
-  # Previously s.focal excluded fuzzy-tracked parameters from the strict test,
-  # and the fuzzy block only ever looked at Rhat - so a fuzzy family could have
-  # arbitrarily low n.eff and still pass. The fuzzy proportion now counts a
-  # low n.eff the same way it counts a high Rhat.
+test_that("fuzzy-tracked parameters are governed by neff.required as well as Rht.required", {
+  # Fuzzy-tracked parameters are excluded from the strict test, so the fuzzy
+  # proportion counts a low n.eff the same way it counts a high Rhat - a fuzzy
+  # family can't pass with arbitrarily low n.eff.
   spec <- c(list(a = "good", `sp[1]` = "sticky"),
             setNames(as.list(rep("good", 4)), paste0("sp[", 2:5, "]")))
   mo <- make_mcmcOutput(spec, n = 2000)
@@ -231,21 +226,12 @@ test_that("FIXED (F4): fuzzy-tracked parameters are now also governed by neff.re
   expect_true(checkNimble(mo, par.fuzzy.track = "sp", neff.required = 100,
                           fuzzy.threshold = 0.5)$result)
 
-  # unchanged: not fuzzy-tracked, this parameter alone still fails the strict test
+  # not fuzzy-tracked, the same parameter fails the strict test
   expect_false(checkNimble(mo, neff.required = 100)$result)
 })
 
-test_that("FIXED (F11): fuzzy Rhat is no longer rounded before comparison", {
-  # round(Rht.fuzzy, 1) > Rht.required used to let a value of 1.14 round down
-  # to 1.1 and pass the fuzzy test, even though 1.14 fails the (always
-  # unrounded) strict test. Both now use the raw value.
-  expect_false(round(1.14, digits = 1) > 1.1)   # would have passed under the old rounding
-  expect_true(1.14 > 1.1)                        # correctly fails now
-})
-
-test_that("FIXED (F4/F5): NA Rhat or n.eff among fuzzy-tracked parameters is fatal", {
-  # Reverted from a warning back to a stop, per explicit decision: any NA
-  # Rhat or n.eff, whether focal or fuzzy-tracked, now halts the run rather
+test_that("NA Rhat or n.eff among fuzzy-tracked parameters is fatal", {
+  # Any NA Rhat or n.eff, whether focal or fuzzy-tracked, halts the run rather
   # than being tolerated or counted toward the fuzzy proportion.
   spec <- c(list(a = "good", `sp[1]` = "const"),
             setNames(as.list(rep("good", 4)), paste0("sp[", 2:5, "]")))

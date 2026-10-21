@@ -24,13 +24,29 @@ test_that("chains are truncated to the length of the shortest", {
   expect_equal(r$burnin.realized, 1000)
 })
 
+test_that("max.nblks caps the block count below what's on disk, and never raises it", {
+  # runNimble()'s seeded manual mode uses this so blocks written past the
+  # stopping point (polling overshoot) can't change what is gathered.
+  d <- make_empty_dump_dir(list(1:7, 1:6))
+  r <- countNimbleBlocks(d, burnin = 0.5, ni.block = 1000, max.nblks = 4)
+
+  expect_equal(r$nblks, 4)
+  expect_equal(r$burnin, 2000)                    # proportional burn-in against the capped length
+  expect_equal(unname(r$m[, "blk"]), c(3L, 4L, 3L, 4L))
+  # indistinguishable from a run that only ever wrote 4 blocks per chain
+  expect_identical(r, countNimbleBlocks(make_empty_dump_dir(list(1:4, 1:4)), 0.5, 1000))
+  # a cap at or above the shortest chain changes nothing; NULL is the default
+  expect_identical(countNimbleBlocks(d, 0.5, 1000, max.nblks = 10), countNimbleBlocks(d, 0.5, 1000))
+  expect_identical(countNimbleBlocks(d, 0.5, 1000, max.nblks = NULL), countNimbleBlocks(d, 0.5, 1000))
+})
+
 test_that("proportional burn-in grows as the run grows, retiring earlier blocks", {
   # Same chains, two lengths. Documents the growing-burn-in semantics.
   r4 <- countNimbleBlocks(make_empty_dump_dir(list(1:4, 1:4)), 0.5, 1000)
   r8 <- countNimbleBlocks(make_empty_dump_dir(list(1:8, 1:8)), 0.5, 1000)
 
   expect_equal(min(r4$m[, "blk"]), 3)
-  expect_equal(min(r8$m[, "blk"]), 5)   # block 3, retained at nblks=4, is now burn-in
+  expect_equal(min(r8$m[, "blk"]), 5)   # block 3, retained at nblks = 4, is burn-in at nblks = 8
   expect_equal(r8$burnin, 4000)
 })
 
@@ -72,10 +88,34 @@ test_that("non-block files in dump.path are ignored", {
   expect_true(all(grepl("^mod_chn", rownames(r$m))))
 })
 
+test_that(".tmp files from an in-progress atomic rename are not counted as dumps", {
+  # runNimbleBlock() writes <dump>.RData.tmp then renames it into place; a
+  # lone .tmp (caught mid-write, before its final file exists) must not be
+  # treated as a completed block.
+  d <- make_empty_dump_dir(list(1:3, 1:3))
+  file.create(file.path(d, "mod_chn1_4.RData.tmp"))
+
+  r <- countNimbleBlocks(d, burnin = 0.5, ni.block = 1000)
+  expect_equal(r$nblks, 3)
+  expect_false(any(grepl("\\.tmp$", rownames(r$m))))
+})
+
+test_that("a .tmp file alongside its already-renamed final file doesn't look like a duplicate block", {
+  # A readdir caught mid-rename can list both mod_chn1_3.RData and its .tmp at
+  # once; an unanchored "mod_chn" match parses both to the same (chn, blk),
+  # making the gap check below fail with an empty "missing block(s)" list.
+  d <- make_empty_dump_dir(list(1:3, 1:3))
+  file.create(file.path(d, "mod_chn1_3.RData.tmp"))
+
+  r <- countNimbleBlocks(d, burnin = 0.5, ni.block = 1000)
+  expect_equal(r$nblks, 3)
+  expect_equal(sum(r$m[, "chn"] == 1 & r$m[, "blk"] == 3), 1)
+})
+
 test_that("a chain with no dumps at all is returned without complaint", {
   # countNimbleBlocks only describes what is on disk; it is not its job to know
   # how many chains SHOULD exist. The "did every chain report in" check lives in
-  # runNimble() (finding F12), which knows nc and compares against it.
+  # runNimble(), which knows nc and compares against it.
   d <- make_empty_dump_dir(list(1:3, integer(0), 1:3))
 
   r <- countNimbleBlocks(d, burnin = 0.5, ni.block = 1000)
@@ -83,23 +123,23 @@ test_that("a chain with no dumps at all is returned without complaint", {
 })
 
 # ---------------------------------------------------------------------------
-# Regression tests for fixed bugs (see NEWS.md for the full write-up)
+# Malformed dump directories
 # ---------------------------------------------------------------------------
 
-test_that("FIXED (F3): gapped block numbers are refused rather than renumbered", {
+test_that("gapped block numbers are refused rather than renumbered", {
   # Chain 1 is missing block 4. Renumbering its block 5 down to "block 4" would
   # silently pair it against chain 2's genuine block 4, misaligning the two
-  # chains' iteration ranges without any warning. countNimbleBlocks now stops
-  # instead, naming the chain and the missing block number.
+  # chains' iteration ranges without any warning, so countNimbleBlocks stops,
+  # naming the chain and the missing block number.
   d <- make_empty_dump_dir(list(c(1, 2, 3, 5), 1:4))
 
   expect_error(countNimbleBlocks(d, burnin = 0.5, ni.block = 1000),
                "missing block dump\\(s\\) 4")
 })
 
-test_that("FIXED (F15): a single surviving row no longer drops to a vector", {
-  # `m <- m[which(m[,2] <= nblks),]` used to lack drop = FALSE, so one chain
-  # with one block collapsed the matrix and the next subscript failed.
+test_that("a single surviving row stays a matrix", {
+  # One chain with one block leaves one row in m; without drop = FALSE that
+  # row would collapse to a vector and the next subscript would fail.
   d <- make_empty_dump_dir(list(1))
   expect_no_error(countNimbleBlocks(d, burnin = 0.5, ni.block = 1000))
 
@@ -107,10 +147,9 @@ test_that("FIXED (F15): a single surviving row no longer drops to a vector", {
   expect_no_error(countNimbleBlocks(d2, burnin = 0.5, ni.block = 1000))
 })
 
-test_that("FIXED (F23): an unparseable block number is reported, not a cryptic NA crash", {
-  # Any file matching "mod_chn" whose chain/block number does not parse as an
-  # integer used to put NA into m, and any(NA != ...) in the (now-removed)
-  # renumbering loop was neither TRUE nor FALSE.
+test_that("an unparseable block number is reported with the offending file name", {
+  # A file matching "mod_chn" whose chain/block number doesn't parse as an
+  # integer would put NA into m; countNimbleBlocks stops and names the file.
   d <- make_empty_dump_dir(list(1:3, 1:3))
   file.create(file.path(d, "mod_chn2_.RData"))       # e.g. a truncated write
 

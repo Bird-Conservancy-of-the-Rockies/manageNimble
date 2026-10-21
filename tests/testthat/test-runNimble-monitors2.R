@@ -31,10 +31,9 @@ toy <- function() {
 new_tmp <- function() {
   # tempfile() rather than sample(letters, ...): toy() below calls set.seed(42),
   # so a seed-derived name would collide across test_that() blocks that draw the
-  # same number of random values before calling this - which they do here, and
-  # did collide in practice (silently reusing a previous test's leftover
-  # directory) before this fix. tempfile()'s own uniqueness is unaffected by
-  # set.seed().
+  # same number of random values before calling this, which they do here,
+  # silently reusing a previous test's leftover directory. tempfile()'s own
+  # uniqueness is unaffected by set.seed().
   d <- tempfile(pattern = "cm2")
   dir.create(d, recursive = TRUE, showWarnings = FALSE)
   d
@@ -108,7 +107,7 @@ test_that("consolidate.monitors2 = TRUE (the default) attaches mod$monitors2, id
   expect_equal(nrow(joined), nrow(loaded$monitors2$iter.key))
 })
 
-test_that("consolidate.monitors2 = FALSE reproduces the old behaviour: no mod$monitors2, standalone file still written", {
+test_that("consolidate.monitors2 = FALSE: no mod$monitors2, standalone file written", {
   dump.path <- make_dump_with_monitors2()
   wd <- new_tmp(); old.wd <- setwd(wd); on.exit(setwd(old.wd), add = TRUE)
   mod.nam <- "modB"

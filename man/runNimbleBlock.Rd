@@ -19,7 +19,7 @@
   \item{tmp.path}{Temporary directory in which to save NIMBLE temporary files to facilitate cleanup.}
   \item{dump.file.path}{Save samples to this file. Written via a temp file and atomic rename, so a file visible under this name is always complete - callers reading block dumps never need to guard against a partial write.}
   \item{SamplerSourcePath}{Path to script file containing necessary lines to insert custom MCMC samplers. Must include necessary lines to remove default samplers and add desired samplers for target parameters - referencing the MCMC configuration object as \code{nm.conf} (e.g. \code{nm.conf$removeSamplers(...)}, \code{nm.conf$addSampler(...)}), which is what this function passes to \code{\link[nimble]{buildMCMC}} immediately afterward. Default is to not provide a script file and thus use default samplers for all parameters. Requires the \pkg{nimbleHMC} package to be installed. Only used (and only takes effect) on the first block of a chain.}
-  \item{monitors2}{Optional second set of monitored parameters, saved at their own (typically much coarser) thinning rate \code{n.thin2}. Configured on the first block of a chain; on continuation blocks it must still be supplied (identically) for the second set to be included in the dump, but \code{n.thin2} is ignored there (the rate is already baked into the compiled sampler). Default is no second set, in which case the dump file's contents are unchanged from before this feature existed.}
+  \item{monitors2}{Optional second set of monitored parameters, saved at their own (typically much coarser) thinning rate \code{n.thin2}. Configured on the first block of a chain; on continuation blocks it must still be supplied (identically) for the second set to be included in the dump, but \code{n.thin2} is ignored there (the rate is already baked into the compiled sampler). Default is no second set, in which case the dump file holds only \code{samp}.}
   \item{n.thin2}{Thinning rate for \code{monitors2}. Only used (and only takes effect) on the first block of a chain.}
 }
 \value{
@@ -28,8 +28,7 @@
 \author{
   Bryan L. Nuse and Quresh S. Latif, Bird Conservancy of the Rockies.
 
-  Substantially revised with Claude (Anthropic) assistance during a full code review; see
-  \code{NEWS.md} for what changed.
+  Developed in part with assistance from Claude (Anthropic); see \code{NEWS.md}.
 }
 
 \keyword{nimble}

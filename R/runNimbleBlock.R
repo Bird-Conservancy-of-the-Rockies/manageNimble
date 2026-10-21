@@ -6,8 +6,8 @@ runNimbleBlock <- function (mod.lst = NULL, comp.mcmc = NULL, n.iter = 1000,
   # its own (typically much coarser) thinning rate. Intended for quantities too
   # large to retain at the primary thinning rate - latent state arrays, for
   # example - which are needed for post hoc calculations but not for convergence
-  # diagnostics. Defaults to no second set, in which case behaviour and the
-  # contents of the block dump are unchanged.
+  # diagnostics. Defaults to no second set, in which case the block dump holds
+  # only samp.
   #
   # On continuation blocks the MCMC is already configured, so monitors2 is used
   # here only to decide whether mvSamples2 should be written to the dump file.
@@ -37,7 +37,7 @@ runNimbleBlock <- function (mod.lst = NULL, comp.mcmc = NULL, n.iter = 1000,
     # (the normal case, since each worker is a fresh Rscript process with no
     # global nm.conf) or, if a same-named global object happened to exist, would
     # silently mutate that unrelated object while nm.conf here - the one actually
-    # passed to buildMCMC() below - stayed untouched.
+    # passed to buildMCMC() below - stays untouched.
     if(!is.na(SamplerSourcePath)) source(SamplerSourcePath, local = TRUE)
     nm.mcmc <- buildMCMC(nm.conf)
     nm.C <- compileNimble(nm, dirName = tmp.path)
@@ -50,8 +50,8 @@ runNimbleBlock <- function (mod.lst = NULL, comp.mcmc = NULL, n.iter = 1000,
   samp <- as.matrix(comp.mcmc$mvSamples)
   # Write to a temp file and rename into place. countNimbleBlocks()/gatherNimble()
   # list dump.file.path's final name to decide what is safe to read; an atomic
-  # rename means a file visible under that name is always complete, removing the
-  # need for the Linux-only lsof polling that used to guard against partial reads.
+  # rename means a file visible under that name is always complete, so readers
+  # need no locking or polling.
   tmp.path.file <- paste0(dump.file.path, ".tmp")
   if(length(monitors2) > 0) {
     samp2 <- as.matrix(comp.mcmc$mvSamples2)
